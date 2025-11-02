@@ -1,66 +1,25 @@
 import i18n from 'i18next';
 import { id } from './id';
-import initToolGroups from './initToolGroups';
-import toolbarButtons from './toolbarButtons';
+import { initToolGroups, toolbarButtons, cornerstone,
+  ohif,
+  dicomsr,
+  dicomvideo,
+  basicLayout,
+  basicRoute,
+  extensionDependencies as basicDependencies,
+  mode as basicMode,
+  modeInstance as basicModeInstance,
+ } from '@ohif/mode-basic';
 
-// Allow this mode by excluding non-imaging modalities such as SR, SEG
-// Also, SM is not a simple imaging modalities, so exclude it.
-const NON_IMAGE_MODALITIES = ['ECG', 'SEG', 'RTSTRUCT', 'RTPLAN', 'PR'];
-
-const ohif = {
-  layout: '@ohif/extension-default.layoutTemplateModule.viewerLayout',
-  sopClassHandler: '@ohif/extension-default.sopClassHandlerModule.stack',
-  thumbnailList: '@ohif/extension-default.panelModule.seriesList',
-  wsiSopClassHandler:
-    '@ohif/extension-cornerstone.sopClassHandlerModule.DicomMicroscopySopClassHandler',
-};
-
-const cornerstone = {
-  measurements: '@ohif/extension-cornerstone.panelModule.panelMeasurement',
-  segmentation: '@ohif/extension-cornerstone.panelModule.panelSegmentation',
-};
-
-const tracked = {
+export const tracked = {
   measurements: '@ohif/extension-measurement-tracking.panelModule.trackedMeasurements',
   thumbnailList: '@ohif/extension-measurement-tracking.panelModule.seriesList',
   viewport: '@ohif/extension-measurement-tracking.viewportModule.cornerstone-tracked',
 };
 
-const dicomsr = {
-  sopClassHandler: '@ohif/extension-cornerstone-dicom-sr.sopClassHandlerModule.dicom-sr',
-  sopClassHandler3D: '@ohif/extension-cornerstone-dicom-sr.sopClassHandlerModule.dicom-sr-3d',
-  viewport: '@ohif/extension-cornerstone-dicom-sr.viewportModule.dicom-sr',
-};
-
-const dicomvideo = {
-  sopClassHandler: '@ohif/extension-dicom-video.sopClassHandlerModule.dicom-video',
-  viewport: '@ohif/extension-dicom-video.viewportModule.dicom-video',
-};
-
-const dicompdf = {
-  sopClassHandler: '@ohif/extension-dicom-pdf.sopClassHandlerModule.dicom-pdf',
-  viewport: '@ohif/extension-dicom-pdf.viewportModule.dicom-pdf',
-};
-
-const dicomSeg = {
-  sopClassHandler: '@ohif/extension-cornerstone-dicom-seg.sopClassHandlerModule.dicom-seg',
-  viewport: '@ohif/extension-cornerstone-dicom-seg.viewportModule.dicom-seg',
-};
-
-const dicomPmap = {
-  sopClassHandler: '@ohif/extension-cornerstone-dicom-pmap.sopClassHandlerModule.dicom-pmap',
-  viewport: '@ohif/extension-cornerstone-dicom-pmap.viewportModule.dicom-pmap',
-};
-
-const dicomRT = {
-  viewport: '@ohif/extension-cornerstone-dicom-rt.viewportModule.dicom-rt',
-  sopClassHandler: '@ohif/extension-cornerstone-dicom-rt.sopClassHandlerModule.dicom-rt',
-};
-
-const extensionDependencies = {
+export const extensionDependencies = {
   // Can derive the versions at least process.env.from npm_package_version
-  '@ohif/extension-default': '^3.0.0',
-  '@ohif/extension-cornerstone': '^3.0.0',
+  ...basicDependencies,
   '@ohif/extension-measurement-tracking': '^3.0.0',
   '@ohif/extension-cornerstone-dicom-sr': '^3.0.0',
   '@ohif/extension-cornerstone-dicom-seg': '^3.0.0',
@@ -156,8 +115,6 @@ function modeFactory({ modeConfiguration }) {
         'Angle',
         'CobbAngle',
         'Magnify',
-        'OpenSpline',
-        'CPRRotation',
         'CalibrationLine',
         'TagBrowser',
         'AdvancedMagnify',
@@ -288,30 +245,12 @@ function modeFactory({ modeConfiguration }) {
       },
     ],
     extensions: extensionDependencies,
-    // Default protocol gets self-registered by default in the init
-    hangingProtocol: 'default',
-    // Order is important in sop class handlers when two handlers both use
-    // the same sop class under different situations.  In that case, the more
-    // general handler needs to come last.  For this case, the dicomvideo must
-    // come first to remove video transfer syntax before ohif uses images
-    sopClassHandlers: [
-      dicomvideo.sopClassHandler,
-      dicomSeg.sopClassHandler,
-      dicomPmap.sopClassHandler,
-      ohif.sopClassHandler,
-      ohif.wsiSopClassHandler,
-      dicompdf.sopClassHandler,
-      dicomsr.sopClassHandler3D,
-      dicomsr.sopClassHandler,
-      dicomRT.sopClassHandler,
-    ],
-    ...modeConfiguration,
   };
-}
 
 const mode = {
+  ...basicMode,
   id,
-  modeFactory,
+  modeInstance,
   extensionDependencies,
 };
 
