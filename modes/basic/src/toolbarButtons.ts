@@ -405,6 +405,18 @@ const toolbarButtons: Button[] = [
     },
   },
   {
+    id: 'CPRRotation',
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-rotate-right',
+      label: 'CPR Rotation',
+      tooltip: 'Rotate CPR View',
+      commands: {
+        commandName: 'showCPRRotationDialog',
+      },
+    },
+  },
+  {
     id: 'CalibrationLine',
     uiType: 'ohif.toolButton',
     props: {
