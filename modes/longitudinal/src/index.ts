@@ -1,15 +1,24 @@
 import i18n from 'i18next';
 import { id } from './id';
-import { initToolGroups, toolbarButtons, cornerstone,
+import {
+  initToolGroups,
+  toolbarButtons,
+  cornerstone,
   ohif,
   dicomsr,
   dicomvideo,
+  dicompdf,
+  dicomSeg,
+  dicomPmap,
+  dicomRT,
   basicLayout,
   basicRoute,
   extensionDependencies as basicDependencies,
   mode as basicMode,
   modeInstance as basicModeInstance,
- } from '@ohif/mode-basic';
+  NON_IMAGE_MODALITIES,
+  sopClassHandlers,
+} from '@ohif/mode-basic';
 
 export const tracked = {
   measurements: '@ohif/extension-measurement-tracking.panelModule.trackedMeasurements',
@@ -115,6 +124,8 @@ function modeFactory({ modeConfiguration }) {
         'Angle',
         'CobbAngle',
         'Magnify',
+        'OpenSpline',
+        'CPRRotation',
         'CalibrationLine',
         'TagBrowser',
         'AdvancedMagnify',
@@ -245,14 +256,19 @@ function modeFactory({ modeConfiguration }) {
       },
     ],
     extensions: extensionDependencies,
+    sopClassHandlers, // Add sopClassHandlers to modeFactory return
   };
+}
+
+const modeInstance = modeFactory({ modeConfiguration: {} });
 
 const mode = {
   ...basicMode,
   id,
-  modeInstance,
+  modeFactory,
   extensionDependencies,
+  sopClassHandlers, // Must come after ...basicMode to override it
 };
 
 export default mode;
-export { initToolGroups, toolbarButtons };
+export { initToolGroups, toolbarButtons, sopClassHandlers };

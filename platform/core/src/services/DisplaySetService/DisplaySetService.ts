@@ -312,13 +312,28 @@ export default class DisplaySetService extends PubSubService {
 
     const existingDisplaySets = this.getDisplaySetsForSeries(instance.SeriesInstanceUID) || [];
 
-    const SOPClassHandlerIds = this.SOPClassHandlerIds;
+    const SOPClassHandlerIds = this.SOPClassHandlerIds || [];
     const allDisplaySets = [];
+
+    if (SOPClassHandlerIds.length === 0) {
+      console.warn('No SOPClassHandlerIds configured! DisplaySetService.init() may not have been called.');
+      return allDisplaySets;
+    }
 
     // Iterate over the sop class handlers while there are still instances to add
     for (let i = 0; i < SOPClassHandlerIds.length && instances.length; i++) {
       const SOPClassHandlerId = SOPClassHandlerIds[i];
       const handler = this.extensionManager.getModuleEntry(SOPClassHandlerId);
+
+      if (!handler) {
+        console.warn(`Handler not found for ${SOPClassHandlerId}`);
+        continue;
+      }
+
+      if (!handler.sopClassUids) {
+        console.warn(`Handler ${SOPClassHandlerId} has no sopClassUids`);
+        continue;
+      }
 
       if (handler.sopClassUids.includes(instance.SOPClassUID)) {
         // Check if displaySets are already created using this SeriesInstanceUID/SOPClassHandler pair.
@@ -357,7 +372,17 @@ export default class DisplaySetService extends PubSubService {
 
         // The instances array still contains some instances, so try
         // creating additional display sets using the sop class handler
-        displaySets = handler.getDisplaySetsFromSeries(instances);
+        try {
+          if (!handler.getDisplaySetsFromSeries) {
+            console.warn(`Handler ${SOPClassHandlerId} has no getDisplaySetsFromSeries method`);
+            displaySets = null;
+          } else {
+            displaySets = handler.getDisplaySetsFromSeries(instances);
+          }
+        } catch (error) {
+          console.error(`Error in sopClassHandler ${SOPClassHandlerId}:`, error);
+          displaySets = null;
+        }
 
         if (!displaySets || !displaySets.length) {
           continue;
@@ -385,7 +410,24 @@ export default class DisplaySetService extends PubSubService {
     if (allDisplaySets.length === 0) {
       // applying hp-defined viewport settings to the displaysets
       const handler = this.extensionManager.getModuleEntry(this.unsupportedSOPClassHandler);
-      const displaySets = handler.getDisplaySetsFromSeries(instances);
+
+      if (!handler) {
+        console.warn(`Unsupported handler not found: ${this.unsupportedSOPClassHandler}`);
+        return allDisplaySets;
+      }
+
+      let displaySets;
+      try {
+        if (!handler.getDisplaySetsFromSeries) {
+          console.warn(`Unsupported handler has no getDisplaySetsFromSeries method`);
+          return allDisplaySets;
+        }
+        displaySets = handler.getDisplaySetsFromSeries(instances);
+      } catch (error) {
+        console.error(`Error in unsupported handler:`, error);
+        return allDisplaySets;
+      }
+
       if (displaySets?.length) {
         displaySets.forEach(ds => {
           Object.keys(settings).forEach(key => {

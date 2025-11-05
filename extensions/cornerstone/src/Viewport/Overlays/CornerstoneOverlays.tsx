@@ -5,7 +5,14 @@ import CustomizableViewportOverlay from './CustomizableViewportOverlay';
 import ViewportOrientationMarkers from './ViewportOrientationMarkers';
 import ViewportImageSliceLoadingIndicator from './ViewportImageSliceLoadingIndicator';
 
-function CornerstoneOverlays(props: withAppTypes) {
+interface CornerstoneOverlaysProps {
+  viewportId: string;
+  element: HTMLElement;
+  scrollbarHeight?: string;
+  servicesManager: any;
+}
+
+function CornerstoneOverlays(props: CornerstoneOverlaysProps) {
   const { viewportId, element, scrollbarHeight, servicesManager } = props;
   const { cornerstoneViewportService } = servicesManager.services;
   const [imageSliceData, setImageSliceData] = useState({
@@ -17,12 +24,12 @@ function CornerstoneOverlays(props: withAppTypes) {
   useEffect(() => {
     const { unsubscribe } = cornerstoneViewportService.subscribe(
       cornerstoneViewportService.EVENTS.VIEWPORT_DATA_CHANGED,
-      props => {
-        if (props.viewportId !== viewportId) {
+      (eventProps: any) => {
+        if (eventProps.viewportId !== viewportId) {
           return;
         }
 
-        setViewportData(props.viewportData);
+        setViewportData(eventProps.viewportData);
       }
     );
 
@@ -38,14 +45,6 @@ function CornerstoneOverlays(props: withAppTypes) {
   // Ẩn tất cả overlays cho viewport CPR
   if (viewportId === 'cpr') {
     return null;
-  }
-
-  if (viewportData) {
-    const viewportInfo = cornerstoneViewportService.getViewportInfo(viewportId);
-
-    if (viewportInfo?.viewportOptions?.customViewportProps?.hideOverlays) {
-      return null;
-    }
   }
 
   return (
