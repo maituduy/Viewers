@@ -1,4 +1,4 @@
-import { annotation, SplineROITool } from '@cornerstonejs/tools';
+import { annotation, SplineROITool, Enums as ToolEnums } from '@cornerstonejs/tools';
 import type {AnnotationRenderContext} from "@cornerstonejs/tools/types";
 import type {SplineROIAnnotation} from "@cornerstonejs/tools/types/ToolSpecificAnnotationTypes";
 import getActiveViewportEnabledElement from '../utils/getActiveViewportEnabledElement';
