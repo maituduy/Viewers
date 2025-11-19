@@ -48,7 +48,7 @@ class OpenSplineTool extends SplineROITool {
   addNewAnnotation = (evt) => {
     const result = super.addNewAnnotation(evt);
 
-    console.log('✅ Started drawing - use arrow keys ↑↓ to scroll slices');
+    console.log('Started drawing - use arrow keys to scroll slices');
     cleanOldAnnotation();
     return result;
   }
@@ -60,7 +60,7 @@ class OpenSplineTool extends SplineROITool {
     return super.cancel(element);
   }
 
-  // wrap lai ham triggerAnnotationModified cua parent (bat su kien update)
+  // Wrap parent's triggerAnnotationModified to handle updates
   triggerAnnotationModified = (annotation, enabledElement, changeType) => {
     this._origTriggerModified(annotation, enabledElement, changeType);
 
@@ -113,7 +113,7 @@ class OpenSplineTool extends SplineROITool {
     this._currentRotation = 0; // Reset rotation
 
     function flipPointsAlongZ(points, dimensions, spacing) {
-      const sizeZ = dimensions[2] * spacing[2]; // chiều dài thật theo trục Z
+      const sizeZ = dimensions[2] * spacing[2]; // actual length along Z axis
 
       return points.map(([x, y, z]) => {
         const flippedZ = sizeZ - z;
@@ -145,7 +145,7 @@ class OpenSplineTool extends SplineROITool {
   setupCPRScrollRotation(cprViewport: any) {
     const element = cprViewport.element;
 
-    console.log('🎯 Setting up CPR scroll rotation on element:', element);
+    console.log('Setting up CPR scroll rotation on element:', element);
 
     // Remove old listener if exists
     if ((element as any)._cprWheelListener) {
@@ -153,13 +153,13 @@ class OpenSplineTool extends SplineROITool {
     }
 
     const wheelHandler = (evt: WheelEvent) => {
-      console.log('🔄 Wheel event triggered on CPR viewport!', evt.deltaY);
+      console.log('Wheel event triggered on CPR viewport!', evt.deltaY);
 
       evt.preventDefault();
       evt.stopPropagation();
 
       if (!this._currentCPR) {
-        console.warn('⚠️ No current CPR instance');
+        console.warn('No current CPR instance');
         return;
       }
 
@@ -170,7 +170,7 @@ class OpenSplineTool extends SplineROITool {
       // Keep rotation in 0-360 range
       this._currentRotation = ((this._currentRotation % 360) + 360) % 360;
 
-      console.log(`🔄 CPR rotation: ${this._currentRotation}°`);
+      console.log(`CPR rotation: ${this._currentRotation} degrees`);
 
       // Apply rotation
       this._currentCPR.rotateCPR(this._currentRotation);
@@ -180,7 +180,7 @@ class OpenSplineTool extends SplineROITool {
     (element as any)._cprWheelListener = wheelHandler;
     element.addEventListener('wheel', wheelHandler, { passive: false });
 
-    console.log('✅ CPR wheel listener attached');
+    console.log('CPR wheel listener attached');
   }
 
   /**

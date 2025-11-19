@@ -42,7 +42,7 @@ function CornerstoneOverlays(props: CornerstoneOverlaysProps) {
     return null;
   }
 
-  // Ẩn tất cả overlays cho viewport CPR
+  // Hide all overlays for CPR viewport
   if (viewportId === 'cpr') {
     return null;
   }

@@ -353,7 +353,7 @@ export default class CprWrapper {
       return;
     }
 
-    // XÁC ĐỊNH HỆ TRỤC (B, N, T) DựA VÀO CENTERLINE GEOMETRY
+    // DETERMINE COORDINATE SYSTEM (B, N, T) BASED ON CENTERLINE GEOMETRY
     let B: vec3, N: vec3, T: vec3;
 
     if (!this.centerlineDirection) {
@@ -361,20 +361,20 @@ export default class CprWrapper {
       return;
     }
 
-    // Tính initial B, N một lần duy nhất (nếu chưa có)
+    // Compute initial B, N only once (if not yet calculated)
     if (!this.initialB || !this.initialN) {
       console.log('Computing initial coordinate system from centerline geometry');
 
-      // T = hướng centerline (tangent)
+      // T = centerline direction (tangent)
       T = vec3.normalize(vec3.create(), this.centerlineDirection);
 
-      // Tìm trục có component nhỏ nhất trong T để làm B ban đầu
+      // Find axis with smallest component in T to use as initial B
       const absT = [Math.abs(T[0]), Math.abs(T[1]), Math.abs(T[2])];
       let minAxis = 0;
       if (absT[1] < absT[minAxis]) minAxis = 1;
       if (absT[2] < absT[minAxis]) minAxis = 2;
 
-      // Tạo B ban đầu vuông góc với T
+      // Create initial B perpendicular to T
       const tempB = vec3.fromValues(0, 0, 0);
       tempB[minAxis] = 1.0;
 
@@ -386,22 +386,22 @@ export default class CprWrapper {
       // N = T × B (right-handed system)
       N = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), T, B));
 
-      // CRITICAL: Re-orthogonalize với centerlineDirection thực tế
+      // CRITICAL: Re-orthogonalize with actual centerlineDirection
       const centerlineAxis = vec3.normalize(vec3.create(), this.centerlineDirection);
 
-      // Project B lên mặt phẳng vuông góc với centerlineAxis
+      // Project B onto plane perpendicular to centerlineAxis
       const dotB = vec3.dot(B, centerlineAxis);
       vec3.scaleAndAdd(B, B, centerlineAxis, -dotB);
       vec3.normalize(B, B);
 
-      // Tính N = centerlineAxis × B để đảm bảo hệ trục vuông góc phải
+      // Calculate N = centerlineAxis × B to ensure right-handed orthogonal system
       vec3.cross(N, centerlineAxis, B);
       vec3.normalize(N, N);
 
       // Update T to match centerlineAxis
       vec3.copy(T, centerlineAxis);
 
-      // Lưu initial values
+      // Save initial values
       this.initialB = vec3.clone(B);
       this.initialN = vec3.clone(N);
 
@@ -411,37 +411,37 @@ export default class CprWrapper {
         N: [N[0].toFixed(3), N[1].toFixed(3), N[2].toFixed(3)]
       });
     } else {
-      // Dùng lại initial B, N đã tính
+      // Reuse already computed initial B, N
       console.log('Reusing initial coordinate system');
       T = vec3.normalize(vec3.create(), this.centerlineDirection);
       B = vec3.clone(this.initialB);
       N = vec3.clone(this.initialN);
     }
 
-    // LOGIC XOAY OUTPUT CPR QUANH TRỤC CENTERLINE
+    // CPR OUTPUT ROTATION LOGIC AROUND CENTERLINE AXIS
     if (this.rotationAngle !== 0) {
       const angleRad = (this.rotationAngle * Math.PI) / 180;
       const centerlineAxis = vec3.normalize(vec3.create(), this.centerlineDirection);
 
-      // Xoay B và N quanh centerlineAxis bằng Rodrigues formula
+      // Rotate B and N around centerlineAxis using Rodrigues formula
       const cosAngle = Math.cos(angleRad);
       const sinAngle = Math.sin(angleRad);
 
-      // Xoay B
+      // Rotate B
       const B_rotated = vec3.create();
       const crossAxisB = vec3.cross(vec3.create(), centerlineAxis, B);
       vec3.scale(B_rotated, B, cosAngle);
       vec3.scaleAndAdd(B_rotated, B_rotated, crossAxisB, sinAngle);
       vec3.normalize(B_rotated, B_rotated);
 
-      // Xoay N
+      // Rotate N
       const N_rotated = vec3.create();
       const crossAxisN = vec3.cross(vec3.create(), centerlineAxis, N);
       vec3.scale(N_rotated, N, cosAngle);
       vec3.scaleAndAdd(N_rotated, N_rotated, crossAxisN, sinAngle);
       vec3.normalize(N_rotated, N_rotated);
 
-      // Cập nhật
+      // Update vectors
       vec3.copy(B, B_rotated);
       vec3.copy(N, N_rotated);
 

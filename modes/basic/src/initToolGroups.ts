@@ -233,11 +233,11 @@ function initMPRToolGroup(extensionManager, toolGroupService, commandsManager) {
             type: 'CATMULLROM',
             closed: false,
           },
-          // Cho phép scroll trong khi vẽ
+          // Allow scrolling while drawing
           allowOpenContours: true,
           alwaysRenderOnTopOfImage: false,
           preventHandleOutsideImage: false,
-          // Không block mouse events khác
+          // Don't block other mouse events
           consumeMouseWheel: false,
         },
       },

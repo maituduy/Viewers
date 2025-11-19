@@ -45,13 +45,13 @@
   -ms-user-select: none;
 }
 
-/* Ẩn tất cả overlay và scrollbar cho viewport CPR */
+/* Hide all overlays and scrollbar for CPR viewport */
 [data-viewportid="cpr"] ~ .noselect,
 [data-viewportid="cpr"] ~ div {
   display: none !important;
 }
 
-/* Giữ lại chỉ canvas render CPR */
+/* Keep only CPR render canvas */
 [data-viewportid="cpr"] {
   display: block !important;
 }

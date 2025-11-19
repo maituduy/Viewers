@@ -65,7 +65,7 @@ export const cpr = {
               hideOverlays: true,
             },
           },
-          // disable de khong tu dong load anh
+          // Disable to prevent automatic image loading
           displaySets: [
             {
               id: 'activeDisplaySet'
