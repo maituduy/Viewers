@@ -279,6 +279,16 @@ class CornerstoneCacheService {
       if (!isParametricMap && !isSegOrRtstruct && (!volumeImageIds || !volume)) {
         volumeImageIds = this._getCornerstoneVolumeImageIds(displaySet, dataSource);
 
+        // // TEMPORARY: Limit number of slices to ~250 for testing (avoid crash on 16GB RAM)
+        // const MAX_SLICES = 200;
+        // if (volumeImageIds.length > MAX_SLICES) {
+        //   const originalCount = volumeImageIds.length;
+        //   // Take middle portion of the volume
+        //   const start = Math.floor((volumeImageIds.length - MAX_SLICES) / 2);
+        //   volumeImageIds = volumeImageIds.slice(start, start + MAX_SLICES);
+        //   console.warn(`⚠️ RAM Optimization: Reduced slices from ${originalCount} to ${volumeImageIds.length} for testing`);
+        // }
+
         volume = await volumeLoader.createAndCacheVolume(volumeId, {
           imageIds: volumeImageIds,
         });

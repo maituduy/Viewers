@@ -241,6 +241,19 @@ function initMPRToolGroup(extensionManager, toolGroupService, commandsManager) {
           consumeMouseWheel: false,
         },
       },
+      {
+        toolName: toolNames.AutoVesselTracing,
+        configuration: {
+          spline: {
+            type: 'CATMULLROM',
+            closed: false,
+          },
+          allowOpenContours: true,
+          alwaysRenderOnTopOfImage: false,
+          preventHandleOutsideImage: false,
+          consumeMouseWheel: false,
+        },
+      },
       { toolName: toolNames.SplineROI },
       { toolName: toolNames.LivewireContour },
       { toolName: toolNames.WindowLevelRegion },

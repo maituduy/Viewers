@@ -405,6 +405,25 @@ const toolbarButtons: Button[] = [
     },
   },
   {
+    id: 'AutoVesselTracing',
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'icon-tool-spline-roi',
+      label: 'Auto Vessel',
+      tooltip: 'Auto Vessel Tracing Tool - Click 2-3 points to auto-trace vessel',
+      commands: {
+        commandName: 'setToolActiveToolbar',
+        commandOptions: {
+          toolGroupIds: ['mpr'],
+        },
+      },
+      evaluate: {
+        name: 'evaluate.cornerstoneTool',
+        disabledText: 'Select an MPR viewport to enable this tool',
+      },
+    },
+  },
+  {
     id: 'CPRRotation',
     uiType: 'ohif.toolButton',
     props: {

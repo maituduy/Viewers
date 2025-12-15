@@ -52,6 +52,7 @@ import * as polySeg from '@cornerstonejs/polymorphic-segmentation';
 import CalibrationLineTool from './tools/CalibrationLineTool';
 import ImageOverlayViewerTool from './tools/ImageOverlayViewerTool';
 import OpenSplineTool from './tools/OpenSplineTool';
+import AutoVesselTracingTool from './tools/AutoVesselTracingTool';
 
 export default function initCornerstoneTools(configuration = {}) {
   CrosshairsTool.isAnnotation = false;
@@ -98,6 +99,7 @@ export default function initCornerstoneTools(configuration = {}) {
   addTool(PaintFillTool);
   addTool(ReferenceLinesTool);
   addTool(OpenSplineTool);
+  addTool(AutoVesselTracingTool);
   addTool(CalibrationLineTool);
   addTool(TrackballRotateTool);
   addTool(ImageOverlayViewerTool);
@@ -159,6 +161,7 @@ const toolNames = {
   ReferenceLines: ReferenceLinesTool.toolName,
   CalibrationLine: CalibrationLineTool.toolName,
   OpenSpline: OpenSplineTool.toolName,
+  AutoVesselTracing: AutoVesselTracingTool.toolName,
   TrackballRotateTool: TrackballRotateTool.toolName,
   CircleScissors: CircleScissorsTool.toolName,
   RectangleScissors: RectangleScissorsTool.toolName,
