@@ -53,6 +53,7 @@ import CalibrationLineTool from './tools/CalibrationLineTool';
 import ImageOverlayViewerTool from './tools/ImageOverlayViewerTool';
 import OpenSplineTool from './tools/OpenSplineTool';
 import AutoVesselTracingTool from './tools/AutoVesselTracingTool';
+import { BaseCPRTool } from './tools/BaseCPRTool';
 
 export default function initCornerstoneTools(configuration = {}) {
   CrosshairsTool.isAnnotation = false;
@@ -121,6 +122,10 @@ export default function initCornerstoneTools(configuration = {}) {
   addTool(SculptorTool);
   addTool(SplineContourSegmentationTool);
   addTool(LabelMapEditWithContourTool);
+
+  // Initialize hanging protocol listener for CPR cleanup
+  BaseCPRTool.initializeHPListener();
+
   // Modify annotation tools to use dashed lines on SR
   const annotationStyle = {
     textBoxFontSize: '15px',

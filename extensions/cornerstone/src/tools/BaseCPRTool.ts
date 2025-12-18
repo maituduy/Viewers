@@ -19,6 +19,89 @@ export abstract class BaseCPRTool extends SplineROITool {
   _origTriggerModified = this.triggerAnnotationModified;
   _currentCPR: CprWrapper | null = null;
   _currentRotation: number = 0;
+  private static _hpSubscription: any = null;
+  private static _allCPRInstances: CprWrapper[] = [];
+
+  /**
+   * Initialize HP change listener (call once during app init)
+   */
+  static initializeHPListener() {
+    if (BaseCPRTool._hpSubscription) return;
+
+    const { hangingProtocolService, cornerstoneViewportService } = servicesManager.services;
+
+    BaseCPRTool._hpSubscription = hangingProtocolService.subscribe(
+      hangingProtocolService.EVENTS.PROTOCOL_CHANGED,
+      (evt) => {
+        // Cleanup BEFORE HP changes to prevent widget disposal errors
+        BaseCPRTool.cleanupAllCPR();
+      }
+    );
+
+    // Also subscribe to stage change to ensure cleanup
+    hangingProtocolService.subscribe(
+      hangingProtocolService.EVENTS.STAGE_ACTIVATION,
+      () => {
+        BaseCPRTool.cleanupAllCPR();
+      }
+    );
+  }
+
+  /**
+   * Static helper to clear CPR viewport
+   */
+  private static _clearCPRViewportStatic(cprViewport: any) {
+    try {
+      const renderer = cprViewport.getRenderer();
+      if (!renderer) return;
+
+      const renderWindow = renderer.getRenderWindow();
+      const actors = renderer.getActors();
+      actors.forEach(actor => renderer.removeActor(actor));
+      renderer.resetCamera();
+      renderer.setBackground(0, 0, 0);
+
+      if (renderWindow) {
+        renderWindow.render();
+      }
+
+      const canvas = cprViewport.element?.querySelector('canvas');
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = 'black';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  /**
+   * Cleanup all CPR instances and annotations
+   */
+  static cleanupAllCPR() {
+    // Dispose all CPR instances FIRST before viewport changes
+    BaseCPRTool._allCPRInstances.forEach(cpr => {
+      try {
+        cpr.dispose();
+      } catch (e) {
+        console.warn('Error disposing CPR:', e);
+      }
+    });
+    BaseCPRTool._allCPRInstances = [];
+
+    // Then remove all CPR-related annotations
+    const allAnnotations = annotation.state.getAllAnnotations();
+    const cprAnnotations = allAnnotations.filter(ann =>
+      ann.metadata.toolName === 'OpenSpline' || ann.metadata.toolName === 'AutoVesselTracing'
+    );
+
+    cprAnnotations.forEach(ann => {
+      annotation.state.removeAnnotation(ann.annotationUID);
+    });
+  }
 
   /**
    * Override to allow annotation to be rendered on any slice
@@ -93,7 +176,7 @@ export abstract class BaseCPRTool extends SplineROITool {
     this.annotationCompleted(evt);
   }
 
-  protected annotationCompleted(evt: any) {
+  protected async annotationCompleted(evt: any) {
     super.annotationCompleted(evt);
 
     const { cornerstoneViewportService, viewportGridService } = servicesManager.services;
@@ -122,12 +205,28 @@ export abstract class BaseCPRTool extends SplineROITool {
     const cprViewportId = "cpr";
     const cprViewport = cornerstoneViewportService.getCornerstoneViewport(cprViewportId);
 
-    // Create or reuse CPR instance
+    // Clear viewport to prevent flash of previous content
+    this.clearCPRViewport(cprViewport);
+
+    // Small delay to ensure clear is rendered before starting CPR setup
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Dispose old CPR instance
     if (this._currentCPR) {
+      const index = BaseCPRTool._allCPRInstances.indexOf(this._currentCPR);
+      if (index > -1) {
+        BaseCPRTool._allCPRInstances.splice(index, 1);
+      }
+      try {
+        this._currentCPR.dispose();
+      } catch (e) {
+        console.warn('Error disposing old CPR:', e);
+      }
       this._currentCPR = null;
     }
 
     this._currentCPR = new CprWrapper(cprViewport, image, plane);
+    BaseCPRTool._allCPRInstances.push(this._currentCPR);
     this._currentRotation = 0; // Reset rotation
 
     function flipPointsAlongZ(points, dimensions, spacing) {
@@ -262,6 +361,48 @@ export abstract class BaseCPRTool extends SplineROITool {
     } catch (error) {
       console.error('Error creating VTK image data:', error);
       throw new Error(`Failed to create VTK image: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Clear CPR viewport to prevent flash
+   */
+  protected clearCPRViewport(cprViewport: any) {
+    try {
+      const renderer = cprViewport.getRenderer();
+      if (!renderer) return;
+
+      // Get the render window and clear it completely
+      const renderWindow = renderer.getRenderWindow();
+
+      // Remove all actors
+      const actors = renderer.getActors();
+      actors.forEach(actor => {
+        renderer.removeActor(actor);
+      });
+
+      // Reset camera to prevent any residual rendering
+      renderer.resetCamera();
+
+      // Set background to black (or transparent)
+      renderer.setBackground(0, 0, 0);
+
+      // Force immediate render of empty viewport
+      if (renderWindow) {
+        renderWindow.render();
+      }
+
+      // Also clear the canvas directly to ensure no flash
+      const canvas = cprViewport.element?.querySelector('canvas');
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = 'black';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    } catch (e) {
+      // Viewport not ready yet, ignore
     }
   }
 

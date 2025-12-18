@@ -44,7 +44,21 @@ export default class CprWrapper {
     if (!this.renderWindow) {
       throw new Error('RenderWindow not available from renderer.');
     }
-    this.widget = vtkResliceCursorWidget.newInstance();
+
+    const originalWidget = vtkResliceCursorWidget.newInstance();
+
+    // Wrap widget to add required methods for Cornerstone compatibility
+    this.widget = new Proxy(originalWidget, {
+      get(target, prop) {
+        if (prop === 'getEnabled') {
+          return () => true;
+        }
+        if (prop === 'setEnabled') {
+          return (enabled: boolean) => {};
+        }
+        return target[prop];
+      }
+    });
 
     this.stretchViewType = ViewTypes.XZ_PLANE;
     this.widgetState = this.widget.getWidgetState();
@@ -677,7 +691,7 @@ export default class CprWrapper {
     // Mark as not initialized
     this.isInitialized = false;
 
-    // Remove actors and widgets
+    // Remove actors from renderer FIRST
     try {
       if (this.stretchRenderer && this.actor) {
         this.stretchRenderer.removeActor(this.actor);
@@ -686,21 +700,43 @@ export default class CprWrapper {
       console.warn('Error removing actor:', error);
     }
 
-    // Clean up VTK objects
-    if (this.mapper?.delete) this.mapper.delete();
-    if (this.actor?.delete) this.actor.delete();
-    if (this.centerline?.delete) this.centerline.delete();
-    if (this.widget?.delete) this.widget.delete();
+    // Delete widget BEFORE viewport cleanup to prevent getEnabled error
+    try {
+      if (this.widget) {
+        // Disable widget if it has that method
+        if (typeof this.widget.setEnabled === 'function') {
+          this.widget.setEnabled(false);
+        }
+        // Delete the widget instance
+        if (typeof this.widget.delete === 'function') {
+          this.widget.delete();
+        }
+        this.widget = null;
+      }
+    } catch (error) {
+      console.warn('Error disposing widget:', error);
+    }
 
-    // Clear references
+    // Clean up other VTK objects
+    try {
+      if (this.mapper?.delete) this.mapper.delete();
+      if (this.actor?.delete) this.actor.delete();
+      if (this.centerline?.delete) this.centerline.delete();
+    } catch (error) {
+      console.warn('Error cleaning VTK objects:', error);
+    }
+
+    // Clear all references
     this.mapper = null;
     this.actor = null;
     this.centerline = null;
-    this.widget = null;
     this.cprManipulator = null;
     this.centerlineDirection = null;
     this.initialB = null;
     this.initialN = null;
+    this.viewport = null;
+    this.stretchRenderer = null;
+    this.renderWindow = null;
 
     console.log('CPR wrapper disposed');
   }
