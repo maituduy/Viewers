@@ -20,7 +20,7 @@ export const getNodeOpacity = (volumeActor, nodeIndex) => {
 };
 
 /**
- * Checks if the opacity applied to the PET volume follows a specific pattern
+ * Checks if the opacity applied to the PET/NM volume follows a specific pattern
  */
 export const isPetVolumeWithDefaultOpacity = (volumeId: string, volumeActor) => {
   if (!volumeActor) {
@@ -29,7 +29,7 @@ export const isPetVolumeWithDefaultOpacity = (volumeId: string, volumeActor) => 
 
   const volume = cs3DCache.getVolume(volumeId);
 
-  if (!volume || volume.metadata.Modality !== 'PT') {
+  if (!volume || (volume.metadata.Modality !== 'PT' && volume.metadata.Modality !== 'NM')) {
     return false;
   }
 
@@ -120,8 +120,8 @@ export const getWindowLevelsData = async (
       const modality = metadata.Modality;
 
       const options = {
-        min: modality === 'PT' ? 0.1 : -999,
-        max: modality === 'PT' ? 5 : 10000,
+        min: modality === 'PT' || modality === 'NM' ? 0.1 : -999,
+        max: modality === 'PT' || modality === 'NM' ? 5 : 10000,
       };
 
       const histogram = await getViewportVolumeHistogram(viewport, volume, options);

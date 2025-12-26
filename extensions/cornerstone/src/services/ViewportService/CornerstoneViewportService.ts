@@ -443,7 +443,29 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
 
     const element = viewportInfo.getElement();
     const type = viewportInfo.getViewportType();
-    const background = viewportInfo.getBackground();
+
+    // Auto-detect PT/NM modality and set white background
+    const { displaySetService } = this.servicesManager.services;
+    const isPTorNMViewport = viewportData.data.some(data => {
+      const displaySet = displaySetService.getDisplaySetByUID(data.displaySetInstanceUID);
+      const modality = displaySet?.Modality;
+      console.log('[CornerstoneViewportService] Checking modality:', modality);
+      return modality === 'PT' || modality === 'NM';
+    });
+
+    console.log('[CornerstoneViewportService] isPTorNMViewport:', isPTorNMViewport);
+
+    let background = viewportInfo.getBackground();
+    if (isPTorNMViewport) {
+      background = [1, 1, 1]; // White background for PT/NM
+      console.log('[CornerstoneViewportService] Setting white background for PT/NM');
+      const currentOptions = viewportInfo.getViewportOptions();
+      viewportInfo.setViewportOptions({
+        ...currentOptions,
+        background: [1, 1, 1]
+      });
+    }
+
     const orientation = viewportInfo.getOrientation();
     const displayArea = viewportInfo.getDisplayArea();
 
@@ -811,6 +833,7 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
     viewportInfo: ViewportInfo,
     presentations: Presentations = {}
   ): Promise<void> {
+    const { displaySetService } = this.servicesManager.services;
     const displaySetOptions = viewportInfo.getDisplaySetOptions();
 
     const displaySetInstanceUIDs = viewportData.data.map(data => data.displaySetInstanceUID);
@@ -832,6 +855,10 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
 
     const properties = { ...presentations.lutPresentation?.properties };
     if (!presentations.lutPresentation?.properties) {
+      // Check if this is PT or NM modality
+      const displaySet = displaySetService.getDisplaySetByUID(displaySetInstanceUIDs[0]);
+      const isPTorNM = displaySet?.Modality === 'PT' || displaySet?.Modality === 'NM';
+
       const { voi, voiInverted, colormap } = displaySetOptions[0];
       if (voi && (voi.windowWidth || voi.windowCenter)) {
         const { lower, upper } = csUtils.windowLevel.toLowHighRange(
@@ -841,8 +868,16 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
         properties.voiRange = { lower, upper };
       }
 
-      properties.invert = voiInverted ?? properties.invert;
-      properties.colormap = colormap ?? properties.colormap;
+      // For PT/NM modality, use inverted VOI by default if not explicitly set
+      if (voiInverted !== undefined) {
+        properties.invert = voiInverted;
+      } else if (isPTorNM) {
+        properties.invert = true;
+      }
+
+      if (colormap !== undefined) {
+        properties.colormap = colormap;
+      }
     }
 
     viewport.element.addEventListener(csEnums.Events.VIEWPORT_NEW_IMAGE_SET, evt => {
@@ -1062,6 +1097,9 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
     // Todo: use presentations states
     const volumesProperties = filteredVolumeInputArray.map(({ volumeInput, displaySetOptions }) => {
       const { volumeId } = volumeInput;
+      const displaySet = displaySetService.getDisplaySetByUID(volumeInput.displaySetInstanceUID);
+      const isPTorNM = displaySet?.Modality === 'PT' || displaySet?.Modality === 'NM';
+
       const { voi, voiInverted, colormap, displayPreset } = displaySetOptions;
       const properties = {} as ViewportProperties;
 
@@ -1073,8 +1111,11 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
         properties.voiRange = { lower, upper };
       }
 
+      // For PT/NM modality, use inverted VOI by default if not explicitly set
       if (voiInverted !== undefined) {
         properties.invert = voiInverted;
+      } else if (isPTorNM) {
+        properties.invert = true;
       }
 
       if (colormap !== undefined) {
