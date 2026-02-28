@@ -17,11 +17,15 @@ import { getViewportPresentations } from '../utils/presentations/getViewportPres
 import { useSynchronizersStore } from '../stores/useSynchronizersStore';
 import ActiveViewportBehavior from '../utils/ActiveViewportBehavior';
 import { WITH_NAVIGATION } from '../services/ViewportService/CornerstoneViewportService';
+import { ViewportFilterRenderer } from '../utils/ViewportFilterRenderer';
 
 const STACK = 'stack';
 
 // Cache for viewport dimensions, persists across component remounts
 const viewportDimensions = new Map<string, { width: number; height: number }>();
+
+// Global instance of ViewportFilterRenderer
+let filterRenderer: ViewportFilterRenderer | null = null;
 
 // Todo: This should be done with expose of internal API similar to react-vtkjs-viewport
 // Then we don't need to worry about the re-renders if the props change.
@@ -93,7 +97,13 @@ const OHIFCornerstoneViewport = React.memo(
       cornerstoneCacheService,
       customizationService,
       measurementService,
-    } = servicesManager.services;
+      imageFilterService,
+    } = servicesManager.services as any;
+
+    // Initialize filter renderer if image filter service is available
+    if (imageFilterService && !filterRenderer) {
+      filterRenderer = new ViewportFilterRenderer(imageFilterService);
+    }
 
     const [viewportDialogState] = useViewportDialog();
     // useCallback for scroll bar height calculation
@@ -180,6 +190,11 @@ const OHIFCornerstoneViewport = React.memo(
 
         syncGroupService.addViewportToSyncGroup(viewportId, renderingEngineId, syncGroups);
 
+        // Enable filter rendering if service is available
+        if (filterRenderer && element) {
+          filterRenderer.enableFilterRendering(viewportId, element);
+        }
+
         // we don't need reactivity here so just use state
         const { synchronizersStore } = useSynchronizersStore.getState();
         if (synchronizersStore?.[viewportId]?.length && !isHangingProtocolLayout) {
@@ -214,6 +229,11 @@ const OHIFCornerstoneViewport = React.memo(
         // This should be done after the store presentation since synchronizers
         // will get cleaned up and they need the viewportInfo to be present
         cleanUpServices(viewportInfo);
+
+        // Disable filter rendering
+        if (filterRenderer && enabledVPElement) {
+          filterRenderer.disableFilterRendering(viewportId, enabledVPElement);
+        }
 
         if (onElementDisabled && typeof onElementDisabled === 'function') {
           onElementDisabled(viewportInfo);

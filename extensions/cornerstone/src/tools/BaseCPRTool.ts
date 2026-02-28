@@ -6,7 +6,6 @@ import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 import { utilities, getEnabledElement } from '@cornerstonejs/core';
 import CprWrapper from '../utils/CprWrapper';
-import { servicesManager } from '@ohif/app/src/App';
 import { Point3 } from '@cornerstonejs/core/types';
 
 /**
@@ -21,13 +20,16 @@ export abstract class BaseCPRTool extends SplineROITool {
   _currentRotation: number = 0;
   private static _hpSubscription: any = null;
   private static _allCPRInstances: CprWrapper[] = [];
+  private static _servicesManager: any = null;
 
   /**
    * Initialize HP change listener (call once during app init)
    */
-  static initializeHPListener() {
+  static initializeHPListener(servicesManager: any) {
     if (BaseCPRTool._hpSubscription) return;
+    if (!servicesManager) return;
 
+    BaseCPRTool._servicesManager = servicesManager;
     const { hangingProtocolService, cornerstoneViewportService } = servicesManager.services;
 
     BaseCPRTool._hpSubscription = hangingProtocolService.subscribe(
@@ -179,7 +181,7 @@ export abstract class BaseCPRTool extends SplineROITool {
   protected async annotationCompleted(evt: any) {
     super.annotationCompleted(evt);
 
-    const { cornerstoneViewportService, viewportGridService } = servicesManager.services;
+    const { cornerstoneViewportService, viewportGridService } = (window as any).services;
     const annotationAddedEventDetail = evt.detail;
     const { annotation: { data: annotationData } } = annotationAddedEventDetail;
 

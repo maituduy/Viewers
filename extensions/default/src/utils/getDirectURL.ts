@@ -52,6 +52,9 @@ const getDirectURL = (config, params) => {
         return value.retrieveBulkData(options).then(arr => {
           value.DirectRetrieveURL = URL.createObjectURL(new Blob([arr], { type: defaultType }));
           return value.DirectRetrieveURL;
+        }).catch(error => {
+          console.warn('Failed to retrieve bulk data for', tag, ':', error.message || error);
+          return null;
         });
       }
       console.warn('Unable to retrieve', tag, 'from', instance);

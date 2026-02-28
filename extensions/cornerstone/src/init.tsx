@@ -83,8 +83,7 @@ export default async function init({
     cornerstone.cache.setMaxCacheSize(maxCacheSize);
   }
 
-  initCornerstoneTools();
-
+  initCornerstoneTools({}, servicesManager);
   Settings.getRuntimeSettings().set('useCursors', Boolean(appConfig.useCursors));
 
   const {

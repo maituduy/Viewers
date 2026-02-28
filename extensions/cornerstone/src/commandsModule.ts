@@ -134,6 +134,7 @@ function commandsModule({
     syncGroupService,
     segmentationService,
     displaySetService,
+    imageFilterService,
   } = servicesManager.services as AppTypes.Services;
 
   function _getActiveViewportEnabledElement() {
@@ -2490,6 +2491,47 @@ function commandsModule({
       const renderingEngine = cornerstoneViewportService.getRenderingEngine();
       renderingEngine.render();
     },
+
+    // Image Filter commands
+    setImageFilter: ({ viewportId, filterType }) => {
+      if (!imageFilterService) {
+        console.warn('Image Filter Service not available');
+        return;
+      }
+
+      const targetViewportId = viewportId || viewportGridService.getActiveViewportId();
+      imageFilterService.setFilter(targetViewportId, filterType);
+
+      // Trigger viewport re-render
+      const viewport = cornerstoneViewportService.getCornerstoneViewport(targetViewportId);
+      if (viewport) {
+        viewport.render();
+      }
+    },
+
+    getImageFilter: ({ viewportId }) => {
+      if (!imageFilterService) {
+        return 'none';
+      }
+
+      const targetViewportId = viewportId || viewportGridService.getActiveViewportId();
+      return imageFilterService.getFilter(targetViewportId);
+    },
+
+    clearImageFilter: ({ viewportId }) => {
+      if (!imageFilterService) {
+        return;
+      }
+
+      const targetViewportId = viewportId || viewportGridService.getActiveViewportId();
+      imageFilterService.clearFilter(targetViewportId);
+
+      // Trigger viewport re-render
+      const viewport = cornerstoneViewportService.getCornerstoneViewport(targetViewportId);
+      if (viewport) {
+        viewport.render();
+      }
+    },
   };
 
   const definitions = {
@@ -2813,6 +2855,15 @@ function commandsModule({
     decimateContours: actions.decimateContours,
     convertContourHoles: actions.convertContourHoles,
     setInterpolationToolConfiguration: actions.setInterpolationToolConfiguration,
+    setImageFilter: {
+      commandFn: actions.setImageFilter,
+    },
+    getImageFilter: {
+      commandFn: actions.getImageFilter,
+    },
+    clearImageFilter: {
+      commandFn: actions.clearImageFilter,
+    },
   };
 
   return {

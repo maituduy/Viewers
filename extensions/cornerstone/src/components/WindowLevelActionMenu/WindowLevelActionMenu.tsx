@@ -6,6 +6,7 @@ import { Colorbar } from './Colorbar';
 import { WindowLevel } from './WindowLevel';
 import { VolumeRenderingPresets } from './VolumeRenderingPresets';
 import { VolumeRenderingOptions } from './VolumeRenderingOptions';
+import { ImageFilter } from './ImageFilter';
 import { useViewportRendering } from '../../hooks/useViewportRendering';
 import i18n from 'i18next';
 
@@ -68,12 +69,21 @@ export function WindowLevelActionMenuContent({
       <AllInOneMenu.ItemPanel>
         {!is3DVolume && <Colorbar viewportId={viewportId} />}
 
+        {!is3DVolume && (
+          <AllInOneMenu.SubMenu
+            key="imageFilter"
+            itemLabel="Image Filter"
+            itemIcon="icon-settings"
+          >
+            <ImageFilter viewportId={viewportId} />
+          </AllInOneMenu.SubMenu>
+        )}
+
         {colorbarProperties?.colormaps && !is3DVolume && (
           <AllInOneMenu.SubMenu
             key="colorLUTPresets"
             itemLabel={t('Color LUT')}
             itemIcon="icon-color-lut"
-            className="flex h-[calc(100%-32px)] flex-col"
           >
             <Colormap viewportId={viewportId} />
           </AllInOneMenu.SubMenu>

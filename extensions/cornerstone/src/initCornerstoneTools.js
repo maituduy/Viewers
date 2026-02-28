@@ -55,7 +55,7 @@ import OpenSplineTool from './tools/OpenSplineTool';
 import AutoVesselTracingTool from './tools/AutoVesselTracingTool';
 import { BaseCPRTool } from './tools/BaseCPRTool';
 
-export default function initCornerstoneTools(configuration = {}) {
+export default function initCornerstoneTools(configuration = {}, servicesManager = null) {
   CrosshairsTool.isAnnotation = false;
   LabelmapSlicePropagationTool.isAnnotation = false;
   MarkerLabelmapTool.isAnnotation = false;
@@ -124,7 +124,9 @@ export default function initCornerstoneTools(configuration = {}) {
   addTool(LabelMapEditWithContourTool);
 
   // Initialize hanging protocol listener for CPR cleanup
-  BaseCPRTool.initializeHPListener();
+  if (servicesManager) {
+    BaseCPRTool.initializeHPListener(servicesManager);
+  }
 
   // Modify annotation tools to use dashed lines on SR
   const annotationStyle = {

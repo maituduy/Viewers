@@ -95,7 +95,7 @@ const handleScalingModules = ({ SeriesInstanceUID, StudyInstanceUID }) => {
 
   const modality = instances[0].Modality;
 
-  const allowedModality = ['PT', 'RTDOSE'];
+  const allowedModality = ['PT', 'NM', 'RTDOSE'];
 
   if (!allowedModality.includes(modality)) {
     return;
@@ -152,6 +152,6 @@ const handleScalingModules = ({ SeriesInstanceUID, StudyInstanceUID }) => {
       );
     });
   } catch (error) {
-    console.log(error);
+    console.warn(`Failed to calculate SUV scaling factors for ${modality}:`, error);
   }
 };

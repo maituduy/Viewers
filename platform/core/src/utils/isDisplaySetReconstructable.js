@@ -87,6 +87,8 @@ function hasPosition(multiFrameInstance) {
 
 function isNMReconstructable(multiFrameInstance) {
   const imageSubType = multiFrameInstance.ImageType?.[2];
+
+  // Support standard NM SPECT reconstruction
   return imageSubType === 'RECON TOMO' || imageSubType === 'RECON GATED TOMO';
 }
 
@@ -99,12 +101,10 @@ function processMultiframe(multiFrameInstance) {
   }
 
   if (!hasOrientation(multiFrameInstance)) {
-    console.log('No image orientation information, not reconstructable');
     return { value: false };
   }
 
   if (!hasPosition(multiFrameInstance)) {
-    console.log('No image position information, not reconstructable');
     return { value: false };
   }
 

@@ -3,7 +3,6 @@ import { utilities, getRenderingEngine } from '@cornerstonejs/core';
 import type { Point3 } from '@cornerstonejs/core/types';
 import type { SplineROIAnnotation } from '@cornerstonejs/tools/types/ToolSpecificAnnotationTypes';
 import getActiveViewportEnabledElement from '../utils/getActiveViewportEnabledElement';
-import { servicesManager } from '@ohif/app/src/App';
 import { BaseCPRTool } from './BaseCPRTool';
 
 interface VesselPoint {
@@ -134,7 +133,7 @@ class AutoVesselTracingTool extends BaseCPRTool {
 
     // Perform auto tracing if we have enough seed points
     if (this.seedPoints.length >= this.MIN_SEED_POINTS && !this.isAutoTracing) {
-      const { viewportGridService } = servicesManager.services;
+      const { viewportGridService } = (window as any).services;
       const enabledElement = getActiveViewportEnabledElement(viewportGridService);
       const { viewport } = enabledElement;
 

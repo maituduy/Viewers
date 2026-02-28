@@ -246,7 +246,7 @@ function ViewerViewportGrid(props: withAppTypes) {
         return style;
       };
 
-      console.log("VIEWPORT ID", viewportId)
+      // console.log("VIEWPORT ID", viewportId)
       viewportPanes[i] = (
         <ViewportPane
           // Note: It is highly important that the key is the viewportId here,

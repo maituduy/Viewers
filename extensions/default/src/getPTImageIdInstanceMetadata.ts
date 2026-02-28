@@ -11,46 +11,58 @@ export default function getPTImageIdInstanceMetadata(imageId: string): InstanceM
     throw new Error('dicom metadata are required');
   }
 
-  if (
-    dicomMetaData.SeriesDate === undefined ||
-    dicomMetaData.SeriesTime === undefined ||
-    dicomMetaData.CorrectedImage === undefined ||
-    dicomMetaData.Units === undefined ||
-    !dicomMetaData.RadiopharmaceuticalInformationSequence ||
-    dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideHalfLife === undefined ||
-    dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideTotalDose === undefined ||
-    dicomMetaData.DecayCorrection === undefined ||
-    dicomMetaData.AcquisitionDate === undefined ||
-    dicomMetaData.AcquisitionTime === undefined ||
-    (dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartDateTime ===
-      undefined &&
-      dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartTime ===
-        undefined)
-  ) {
-    throw new Error('required metadata are missing');
+  // Basic required fields for all PT/NM modalities
+  const requiredFields = [
+    'SeriesDate',
+    'SeriesTime', 
+    'AcquisitionDate',
+    'AcquisitionTime'
+  ];
+
+  // Check basic required fields
+  for (const field of requiredFields) {
+    if (dicomMetaData[field] === undefined) {
+      throw new Error(`Required metadata field '${field}' is missing`);
+    }
   }
 
-  if (dicomMetaData.PatientWeight === undefined) {
-    console.warn('PatientWeight missing from PT instance metadata');
+  // For PT modality, check additional required fields
+  if (dicomMetaData.Modality === 'PT') {
+    if (
+      dicomMetaData.CorrectedImage === undefined ||
+      dicomMetaData.Units === undefined ||
+      !dicomMetaData.RadiopharmaceuticalInformationSequence ||
+      dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideHalfLife === undefined ||
+      dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideTotalDose === undefined ||
+      dicomMetaData.DecayCorrection === undefined ||
+      (dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartDateTime ===
+        undefined &&
+        dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartTime ===
+          undefined)
+    ) {
+      throw new Error('required PT metadata are missing');
+    }
   }
 
+  // For NM/SPECT, use basic metadata if available
   const instanceMetadata: InstanceMetadata = {
-    CorrectedImage: dicomMetaData.CorrectedImage,
-    Units: dicomMetaData.Units,
-    RadionuclideHalfLife: dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideHalfLife,
-    RadionuclideTotalDose:
-      dicomMetaData.RadiopharmaceuticalInformationSequence.RadionuclideTotalDose,
-    RadiopharmaceuticalStartDateTime:
-      dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartDateTime,
-    RadiopharmaceuticalStartTime:
-      dicomMetaData.RadiopharmaceuticalInformationSequence.RadiopharmaceuticalStartTime,
-    DecayCorrection: dicomMetaData.DecayCorrection,
+    CorrectedImage: dicomMetaData.CorrectedImage || '',
+    Units: dicomMetaData.Units || 'CNTS',
+    RadionuclideHalfLife: dicomMetaData.RadiopharmaceuticalInformationSequence?.RadionuclideHalfLife || 0,
+    RadionuclideTotalDose: dicomMetaData.RadiopharmaceuticalInformationSequence?.RadionuclideTotalDose || 0,
+    RadiopharmaceuticalStartDateTime: dicomMetaData.RadiopharmaceuticalInformationSequence?.RadiopharmaceuticalStartDateTime,
+    RadiopharmaceuticalStartTime: dicomMetaData.RadiopharmaceuticalInformationSequence?.RadiopharmaceuticalStartTime,
+    DecayCorrection: dicomMetaData.DecayCorrection || 'NONE',
     PatientWeight: dicomMetaData.PatientWeight,
     SeriesDate: dicomMetaData.SeriesDate,
     SeriesTime: dicomMetaData.SeriesTime,
     AcquisitionDate: dicomMetaData.AcquisitionDate,
     AcquisitionTime: dicomMetaData.AcquisitionTime,
   };
+
+  if (dicomMetaData.PatientWeight === undefined) {
+    console.warn('PatientWeight missing from instance metadata');
+  }
 
   if (
     dicomMetaData['70531000'] ||

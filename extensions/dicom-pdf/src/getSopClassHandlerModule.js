@@ -14,12 +14,19 @@ const _getDisplaySetsFromSeries = (instances, servicesManager, extensionManager)
     const { Modality, SOPInstanceUID } = instance;
     const { SeriesDescription = 'PDF', MIMETypeOfEncapsulatedDocument } = instance;
     const { SeriesNumber, SeriesDate, SeriesInstanceUID, StudyInstanceUID, SOPClassUID } = instance;
-    const renderedUrl = dataSource.retrieve.directURL({
-      instance,
-      tag: 'EncapsulatedDocument',
-      defaultType: MIMETypeOfEncapsulatedDocument || 'application/pdf',
-      singlepart: 'pdf',
-    });
+    
+    let renderedUrl;
+    try {
+      renderedUrl = dataSource.retrieve.directURL({
+        instance,
+        tag: 'EncapsulatedDocument',
+        defaultType: MIMETypeOfEncapsulatedDocument || 'application/pdf',
+        singlepart: 'pdf',
+      });
+    } catch (error) {
+      console.warn('Failed to retrieve PDF bulk data URL:', error);
+      renderedUrl = null;
+    }
 
     const displaySet = {
       //plugin: id,

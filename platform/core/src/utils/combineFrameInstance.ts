@@ -51,6 +51,43 @@ const combineFrameInstance = (frame, instance) => {
       imageOrientationPatient = imageOrientationPatient?.map(it => Number(it));
       const SpacingBetweenSlices = Number(instance.SpacingBetweenSlices);
 
+      // Auto-correct invalid position (e.g., from projection data with [0,0,Z] or X=Y=Z)
+      const isInvalidPosition =
+        !imagePositionPatient ||
+        (imagePositionPatient[0] === 0 && imagePositionPatient[1] === 0) ||
+        (imagePositionPatient[0] === imagePositionPatient[1] &&
+         imagePositionPatient[1] === imagePositionPatient[2]);
+
+      if (isInvalidPosition && SpacingBetweenSlices && NumberOfFrames) {
+        // Get FOV from ReconstructionDiameter or calculate from pixel spacing
+        const reconDiameter = instance.ReconstructionDiameter ? Number(instance.ReconstructionDiameter) : null;
+        const pixelSpacing = instance.PixelSpacing?.map(it => Number(it)) || [SpacingBetweenSlices, SpacingBetweenSlices];
+        const rows = instance.Rows || 128;
+        const cols = instance.Columns || 128;
+
+        // Calculate FOV
+        const fov = reconDiameter || (cols * pixelSpacing[0]);
+        const halfFov = fov / 2;
+        const volumeDepth = NumberOfFrames * SpacingBetweenSlices;
+        const halfDepth = volumeDepth / 2;
+
+        // Get table positioning
+        const tableHeight = instance.TableHeight ? Number(instance.TableHeight) : 0;
+        const projZ = instance.DetectorInformationSequence?.[0]?.ImagePositionPatient?.[2]
+          ? Number(instance.DetectorInformationSequence[0].ImagePositionPatient[2])
+          : 0;
+
+        // Calculate position using clinical scanner formula:
+        // X = -FOV/2 (center horizontally)
+        // Y = -FOV/2 - tableHeight (offset by table height)
+        // Z = projZ - volumeDepth/2 - FOV/2 (offset from projection center)
+        const posX = -halfFov;
+        const posY = -halfFov - tableHeight;
+        const posZ = projZ > 0 ? (projZ - halfDepth - halfFov) : (-halfDepth);
+
+        imagePositionPatient = [posX, posY, posZ];
+      }
+
       // Calculate the position for the current frame
       if (imageOrientationPatient && SpacingBetweenSlices) {
         const rowOrientation = vec3.fromValues(
@@ -137,7 +174,7 @@ const combineFrameInstance = (frame, instance) => {
       const col = vec3.fromValues(orientation[3], orientation[4], orientation[5]);
       const normal = vec3.cross(vec3.create(), row, col);
 
-      const position = vec3.scaleAndAdd(vec3.create(), vec3.fromValues(...origin), normal, offset);
+      const position = vec3.scaleAndAdd(vec3.create(), vec3.fromValues(origin[0], origin[1], origin[2]), normal, offset);
       newInstance.ImagePositionPatient = [position[0], position[1], position[2]];
     }
 
