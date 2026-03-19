@@ -2,6 +2,7 @@ import { PubSubService } from '@ohif/core';
 import { Types as OhifTypes } from '@ohif/core';
 import * as cornerstone from '@cornerstonejs/core';
 import { utilities as csUtilities, metaData } from '@cornerstonejs/core';
+import { wrap, transfer } from 'comlink';
 
 export type FilterType = 'none' | 'sharpen' | 'blur' | 'emboss' | 'edges';
 
@@ -56,10 +57,12 @@ class ImageFilterService extends PubSubService {
     uniform vec2 u_textureSize;
     uniform float u_kernel[9];
     uniform float u_kernelWeight;
+    uniform float u_strength;   // 0.0 = original, 1.0 = full filter effect
 
     varying vec2 v_texCoord;
 
     void main() {
+      vec4 original = texture2D(u_image, v_texCoord);
       vec2 onePixel = vec2(1.0) / u_textureSize;
       vec4 colorSum = vec4(0.0);
 
@@ -72,8 +75,10 @@ class ImageFilterService extends PubSubService {
       }
 
       // Normalize by kernel weight if positive (prevents brightness shift)
-      // Then clamp to [0,1] to avoid overflow/underflow on 8-bit output
-      vec3 result = (u_kernelWeight > 0.0) ? colorSum.rgb / u_kernelWeight : colorSum.rgb;
+      vec3 filtered = (u_kernelWeight > 0.0) ? colorSum.rgb / u_kernelWeight : colorSum.rgb;
+
+      // Blend original with filtered result — prevents over-sharpening on noisy images
+      vec3 result = mix(original.rgb, filtered, u_strength);
       gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
     }
   `;
@@ -91,15 +96,66 @@ class ImageFilterService extends PubSubService {
   // Prevents brightness shift and keeps result in [0,1] range
   private kernelWeights: Record<string, number> = {
     none:    1,
-    sharpen: 1,   // sum of positive = 5, but sharpen conventionally not normalized
+    sharpen: 1,   // sum = 5-4 = 1, self-normalizing
     blur:    9,   // 9 × (1/9) = 1 → shader divides by 9
     emboss:  0,   // no normalization — emboss is a directional effect
     edges:   0,   // no normalization — edges center is 8, result can go negative → clamped
   };
 
+  // kernelStrength: how much to blend filtered vs original (u_strength in shader)
+  // - 1.0 = full filter effect
+  // - 0.5 = 50% blend (gentler, avoids noise amplification on wide-window CT)
+  private kernelStrengths: Record<string, number> = {
+    none:    1.0,
+    sharpen: 0.5,  // unsharp-mask style: half blend prevents noise explosion on bone windows
+    blur:    1.0,
+    emboss:  1.0,
+    edges:   1.0,
+  };
+
+  // ── VTK Worker (16-bit precision, off-main-thread) ─────────────────────────
+  /** Raw Worker instance — kept alive to avoid cold-start cost on each render */
+  private _vtkWorkerInstance: Worker | null = null;
+  /** Comlink proxy wrapping the worker's exposed API */
+  private _vtkProxy: any = null;
+  /**
+   * Result cache: cacheKey → ImageData
+   * Key format: `${imageId}|${filterType}|${voiLower}|${voiUpper}|${invert}|${cw}x${ch}`
+   * One entry per unique combination — avoids re-running the worker on every
+   * re-render when nothing has changed (e.g. cursor move, panel open/close).
+   */
+  private _vtkCache: Map<string, ImageData> = new Map();
+  /** Maximum cache entries (LRU eviction) */
+  private static readonly VTK_CACHE_MAX = 8;
+  /**
+   * Bump this whenever the worker pipeline logic changes.
+   * Old cached ImageData entries become invalid and will be recomputed.
+   */
+  private static readonly VTK_WORKER_VERSION = 6; // v6: pass canvas pixels, not HU data
+  /**
+   * Global switch for VTK worker path.
+   * - true  (default): StackViewport uses VTK worker + cache.
+   * - false: force WebGL filter path for all viewports.
+   */
+  private static VTK_FILTER_ENABLED = true;
+
   constructor(servicesManager: AppTypes.ServicesManager) {
     super(EVENTS);
     this.servicesManager = servicesManager;
+  }
+
+  /** Enable/disable VTK filter pipeline globally (default: true). */
+  public setVTKFilterEnabled(enabled: boolean): void {
+    ImageFilterService.VTK_FILTER_ENABLED = enabled;
+    if (!enabled) {
+      // Avoid stale cache usage when toggling off/on in the same session.
+      this._vtkCache.clear();
+    }
+  }
+
+  /** Returns whether VTK filter pipeline is globally enabled. */
+  public isVTKFilterEnabled(): boolean {
+    return ImageFilterService.VTK_FILTER_ENABLED;
   }
 
   /**
@@ -275,6 +331,10 @@ class ImageFilterService extends PubSubService {
       const kernelWeightLocation = gl.getUniformLocation(program, 'u_kernelWeight');
       const kernelWeight = this.kernelWeights[filterType] ?? 0;
       gl.uniform1f(kernelWeightLocation, kernelWeight);
+
+      const strengthLocation = gl.getUniformLocation(program, 'u_strength');
+      const strength = this.kernelStrengths[filterType] ?? 1.0;
+      gl.uniform1f(strengthLocation, strength);
 
       // Draw
       gl.clearColor(0, 0, 0, 0);
@@ -466,6 +526,161 @@ class ImageFilterService extends PubSubService {
     }
   }
 
+  // ── VTK Worker helpers ────────────────────────────────────────────────────
+
+  /**
+   * Lazy-init the VTK filter worker + comlink proxy.
+   * The worker is kept alive between calls to amortise startup cost.
+   */
+  private _getVTKProxy(): any {
+    if (!this._vtkProxy) {
+      this._vtkWorkerInstance = new Worker(
+        new URL('../../workers/vtkFilterWorker.js', import.meta.url),
+        { name: 'vtk-filter-worker' }
+      );
+      this._vtkProxy = wrap(this._vtkWorkerInstance);
+    }
+    return this._vtkProxy;
+  }
+
+  /** Build the cache key for a given render configuration. */
+  private _vtkCacheKey(
+    imageId: string,
+    filterType: string,
+    voiLower: number,
+    voiUpper: number,
+    invert: boolean,
+    cw: number,
+    ch: number
+  ): string {
+    return `v${ImageFilterService.VTK_WORKER_VERSION}|${imageId}|${filterType}|${voiLower.toFixed(0)}|${voiUpper.toFixed(0)}|${invert}|${cw}x${ch}`;
+  }
+
+  /** Insert into cache; evict oldest entry when cap is reached. */
+  private _vtkCacheSet(key: string, imageData: ImageData): void {
+    if (this._vtkCache.size >= ImageFilterService.VTK_CACHE_MAX) {
+      // Map insertion order → delete the oldest key
+      const firstKey = this._vtkCache.keys().next().value;
+      this._vtkCache.delete(firstKey);
+    }
+    this._vtkCache.set(key, imageData);
+  }
+
+  /**
+   * Synchronous cache peek — returns immediately without spawning any work.
+   * Used by ViewportFilterRenderer to check if a VTK result is already ready
+   * so it can be painted synchronously inside IMAGE_RENDERED (before browser paint).
+   *
+   * @returns ImageData from cache, or null if not yet computed.
+   */
+  public peekVTKCache(
+    viewportId: string,
+    viewport: any,
+    canvasEl: HTMLCanvasElement,
+    filterType: FilterType
+  ): ImageData | null {
+    if (filterType === 'none') return null;
+    try {
+      const imageId: string = viewport.getCurrentImageId?.();
+      if (!imageId) return null;
+
+      const vprops   = viewport.getProperties?.() ?? {};
+      const voiRange = vprops.voiRange as { lower: number; upper: number } | undefined;
+      if (!voiRange) return null;
+
+      const key = this._vtkCacheKey(
+        imageId, filterType,
+        voiRange.lower, voiRange.upper,
+        vprops.invert ?? false,
+        canvasEl.width, canvasEl.height
+      );
+      return this._vtkCache.get(key) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Apply filter using the VTK WebWorker pipeline (16-bit HU precision,
+   * non-blocking).
+   *
+   * This is the recommended path for StackViewports:
+   *  - Convolution happens on raw HU values BEFORE VOI quantisation
+   *  - The heavy loop runs off the main thread → no UI jank
+   *  - Results are cached: subsequent re-renders with the same params are
+   *    served synchronously from cache (zero worker round-trip)
+   *
+   * Caller responsibilities:
+   *  - Call this method on IMAGE_RENDERED (or equivalent)
+   *  - On first invocation (cache miss), apply the cheap 8-bit WebGL filter
+   *    as a placeholder, then call `viewport.render()` when the Promise resolves
+   *    to show the high-quality result on the next frame.
+   *
+   * @returns Promise<ImageData | null>  null on error or if 'none' filter
+   */
+  public async applyFilterVTK(
+    viewportId: string,
+    viewport: any,
+    canvasEl: HTMLCanvasElement,
+    filterType: FilterType
+  ): Promise<ImageData | null> {
+    if (filterType === 'none') return null;
+
+    try {
+      // ── 1. Get rendered canvas pixels (Cornerstone's output) ──────────────
+      const ctx = canvasEl.getContext('2d');
+      if (!ctx) return null;
+
+      const cw = canvasEl.width;
+      const ch = canvasEl.height;
+      if (!cw || !ch) return null;
+
+      // ── 2. Build cache key (include VOI so stale cache is busted on W/L change)
+      const imageId: string = viewport.getCurrentImageId?.();
+      if (!imageId) return null;
+
+      const vprops   = viewport.getProperties?.() ?? {};
+      const voiRange = vprops.voiRange as { lower: number; upper: number } | undefined;
+      const voiLower = voiRange?.lower ?? 0;
+      const voiUpper = voiRange?.upper ?? 255;
+
+      const cacheKey = this._vtkCacheKey(imageId, filterType, voiLower, voiUpper, vprops.invert ?? false, cw, ch);
+      const cached   = this._vtkCache.get(cacheKey);
+      if (cached) return cached;
+
+      // ── 3. Read canvas pixels — this captures Cornerstone's full LUT/VOI output
+      const sourceImageData = ctx.getImageData(0, 0, cw, ch);
+
+      // ── 4. Hand off to VTK worker (Transferable: zero-copy buffer) ────────
+      const proxy = this._getVTKProxy();
+      const result = await proxy.applyFilter(
+        transfer(
+          {
+            rgbaBuffer:     sourceImageData.data.buffer,
+            canvasWidth:    cw,
+            canvasHeight:   ch,
+            kernel:         this.kernels[filterType]         ?? this.kernels.none,
+            kernelWeight:   this.kernelWeights[filterType]   ?? 0,
+            kernelStrength: this.kernelStrengths[filterType] ?? 1.0,
+          },
+          [sourceImageData.data.buffer]   // transfer — no copy
+        )
+      );
+
+      if (!result?.rgbaBuffer) return null;
+
+      // ── 5. Wrap result in ImageData, store in cache ───────────────────────
+      const rgba      = new Uint8ClampedArray(result.rgbaBuffer);
+      const imageData = new ImageData(rgba, cw, ch);
+      this._vtkCacheSet(cacheKey, imageData);
+
+      return imageData;
+    } catch (err) {
+      console.error('[ImageFilterService] applyFilterVTK error:', err);
+      return null;
+    }
+  }
+
   /**
    * Set filter for a viewport
    */
@@ -517,6 +732,13 @@ class ImageFilterService extends PubSubService {
     Object.keys(this.filterState).forEach(viewportId => {
       this.dispose(viewportId);
     });
+    // Terminate VTK worker and clear cache
+    if (this._vtkWorkerInstance) {
+      this._vtkWorkerInstance.terminate();
+      this._vtkWorkerInstance = null;
+      this._vtkProxy = null;
+    }
+    this._vtkCache.clear();
   }
 }
 
