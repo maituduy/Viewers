@@ -46,6 +46,7 @@ import {
   SplineContourSegmentationTool,
   LabelMapEditWithContourTool,
 } from '@cornerstonejs/tools';
+import { Enums as csEnums } from '@cornerstonejs/core';
 import { LabelmapSlicePropagationTool, MarkerLabelmapTool } from '@cornerstonejs/ai';
 import * as polySeg from '@cornerstonejs/polymorphic-segmentation';
 
@@ -55,7 +56,44 @@ import OpenSplineTool from './tools/OpenSplineTool';
 import AutoVesselTracingTool from './tools/AutoVesselTracingTool';
 import { BaseCPRTool } from './tools/BaseCPRTool';
 
+let isWindowLevelTool3DPatched = false;
+
+function patchWindowLevelToolFor3D() {
+  if (isWindowLevelTool3DPatched) {
+    return;
+  }
+
+  const originalGetNewRange = WindowLevelTool.prototype.getNewRange;
+  const WL_3D_DRAG_SCALE = 0.35;
+
+  WindowLevelTool.prototype.getNewRange = function (args) {
+    const { viewport, deltaPointsCanvas } = args;
+
+    const is3DViewport =
+      viewport?.type === csEnums.ViewportType.VOLUME_3D ||
+      viewport?.type === csEnums.ViewportType.PERSPECTIVE;
+
+    if (!is3DViewport) {
+      return originalGetNewRange.call(this, args);
+    }
+
+    const scaledArgs = {
+      ...args,
+      deltaPointsCanvas: [
+        (deltaPointsCanvas?.[0] || 0) * WL_3D_DRAG_SCALE,
+        (deltaPointsCanvas?.[1] || 0) * WL_3D_DRAG_SCALE,
+      ],
+    };
+
+    return originalGetNewRange.call(this, scaledArgs);
+  };
+
+  isWindowLevelTool3DPatched = true;
+}
+
 export default function initCornerstoneTools(configuration = {}, servicesManager = null) {
+  patchWindowLevelToolFor3D();
+
   CrosshairsTool.isAnnotation = false;
   LabelmapSlicePropagationTool.isAnnotation = false;
   MarkerLabelmapTool.isAnnotation = false;

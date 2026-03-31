@@ -886,12 +886,51 @@ function commandsModule({
       displaySetInstanceUID?: string;
     }) {
       // convert to numbers
-      const windowWidthNum = Number(windowWidth);
-      const windowCenterNum = Number(windowCenter);
+      let windowWidthNum = Number(windowWidth);
+      let windowCenterNum = Number(windowCenter);
 
       // get actor from the viewport
       const renderingEngine = cornerstoneViewportService.getRenderingEngine();
       const viewport = renderingEngine.getViewport(viewportId);
+
+      const isVolume3DViewport =
+        viewport?.type === CoreEnums.ViewportType.VOLUME_3D ||
+        viewport?.type === CoreEnums.ViewportType.PERSPECTIVE;
+
+      if (isVolume3DViewport) {
+        if (typeof window !== 'undefined') {
+          (window as any).__OHIF_WL_COMMAND_CALLS__ = ((window as any).__OHIF_WL_COMMAND_CALLS__ || 0) + 1;
+          if ((window as any).__OHIF_WL_COMMAND_CALLS__ <= 20) {
+            console.log('[WL-TRACE][Command.setViewportWindowLevel]', {
+              call: (window as any).__OHIF_WL_COMMAND_CALLS__,
+              viewportId,
+              viewportType: viewport?.type,
+              inputWindowWidth: windowWidthNum,
+              inputWindowCenter: windowCenterNum,
+            });
+          }
+        }
+
+        const currentVoiRange = viewport.getProperties()?.voiRange;
+
+        if (currentVoiRange) {
+          const currentWindowLevel = csUtils.windowLevel.toWindowLevel(
+            currentVoiRange.lower,
+            currentVoiRange.upper
+          );
+
+          const deltaWindowWidth = windowWidthNum - currentWindowLevel.windowWidth;
+          const deltaWindowCenter = windowCenterNum - currentWindowLevel.windowCenter;
+          const isLargePresetJump =
+            Math.abs(deltaWindowWidth) > 800 || Math.abs(deltaWindowCenter) > 400;
+
+          // Slow down drag-like VOI updates for 3D by 50%, but keep large preset jumps snappy.
+          if (!isLargePresetJump) {
+            windowWidthNum = currentWindowLevel.windowWidth + deltaWindowWidth * 0.5;
+            windowCenterNum = currentWindowLevel.windowCenter + deltaWindowCenter * 0.5;
+          }
+        }
+      }
 
       const { lower, upper } = csUtils.windowLevel.toLowHighRange(windowWidthNum, windowCenterNum);
 

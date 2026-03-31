@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState, ReactElement, useMemo } from 'react';
+import React, { useEffect, useCallback, useState, ReactElement, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import debounce from 'lodash.debounce';
 import { PanelSection, WindowLevel } from '@ohif/ui-next';
@@ -23,6 +23,7 @@ const ViewportWindowLevel = ({
   const [windowLevels, setWindowLevels] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const displaySets = useActiveViewportDisplaySets();
+  const recentViewportIdRef = useRef<string | null>(null);
 
   const getViewportsWithVolumeIds = useCallback(
     (volumeIds: string[]) => {
@@ -75,6 +76,88 @@ const ViewportWindowLevel = ({
       const windowWidth = range.upper - range.lower;
       const windowCenter = range.lower + windowWidth / 2;
 
+      const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
+      const isVolume3D =
+        viewport?.type === Enums.ViewportType.VOLUME_3D ||
+        viewport?.type === Enums.ViewportType.PERSPECTIVE;
+
+      if (isVolume3D) {
+        if (typeof window !== 'undefined') {
+          (window as any).__OHIF_WL_PANEL_EVENT_CALLS__ =
+            ((window as any).__OHIF_WL_PANEL_EVENT_CALLS__ || 0) + 1;
+          if ((window as any).__OHIF_WL_PANEL_EVENT_CALLS__ <= 20) {
+            console.log('[WL-TRACE][Panel.VOI_MODIFIED]', {
+              call: (window as any).__OHIF_WL_PANEL_EVENT_CALLS__,
+              viewportId,
+              viewportType: viewport?.type,
+              volumeId,
+              windowWidth,
+              windowCenter,
+            });
+          }
+        }
+
+        const widthDelta = windowWidth - oldVOI.windowWidth;
+        const centerDelta = windowCenter - oldVOI.windowCenter;
+        const MAX_WIDTH_DELTA_PER_EVENT = 250;
+        const MAX_CENTER_DELTA_PER_EVENT = 120;
+
+        const isSpike =
+          Math.abs(widthDelta) > MAX_WIDTH_DELTA_PER_EVENT ||
+          Math.abs(centerDelta) > MAX_CENTER_DELTA_PER_EVENT;
+
+        if (isSpike) {
+          const clampedWindowWidth = Math.max(
+            1,
+            oldVOI.windowWidth +
+              Math.max(
+                -MAX_WIDTH_DELTA_PER_EVENT,
+                Math.min(MAX_WIDTH_DELTA_PER_EVENT, widthDelta)
+              )
+          );
+          const clampedWindowCenter =
+            oldVOI.windowCenter +
+            Math.max(
+              -MAX_CENTER_DELTA_PER_EVENT,
+              Math.min(MAX_CENTER_DELTA_PER_EVENT, centerDelta)
+            );
+
+          const clampedRange = {
+            lower: clampedWindowCenter - clampedWindowWidth / 2,
+            upper: clampedWindowCenter + clampedWindowWidth / 2,
+          };
+
+          if (viewport) {
+            (viewport as any).setProperties({ voiRange: clampedRange }, volumeId);
+            viewport.render();
+          }
+
+          console.log('[WL-3D-SOFT-GUARD][Panel]', {
+            volumeId,
+            oldVOI,
+            requested: { windowWidth, windowCenter },
+            clamped: { windowWidth: clampedWindowWidth, windowCenter: clampedWindowCenter },
+            viewportType: viewport?.type,
+          });
+
+          setWindowLevels(
+            windowLevels.map(windowLevel =>
+              windowLevel === oldWindowLevel
+                ? {
+                    ...oldWindowLevel,
+                    voi: {
+                      windowWidth: clampedWindowWidth,
+                      windowCenter: clampedWindowCenter,
+                    },
+                  }
+                : windowLevel
+            )
+          );
+
+          return;
+        }
+      }
+
       if (windowWidth === oldVOI.windowWidth && windowCenter === oldVOI.windowCenter) {
         return;
       }
@@ -93,7 +176,7 @@ const ViewportWindowLevel = ({
         )
       );
     },
-    [windowLevels]
+    [windowLevels, cornerstoneViewportService, viewportId]
   );
 
   const debouncedHandleCornerstoneVOIModified = useMemo(
@@ -105,16 +188,114 @@ const ViewportWindowLevel = ({
     (volumeId, voi) => {
       const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
 
-      const newRange = {
+      if (!viewport) {
+        return;
+      }
+
+      const requestedRange = {
         lower: voi.windowCenter - voi.windowWidth / 2,
         upper: voi.windowCenter + voi.windowWidth / 2,
       };
 
-      viewport.setProperties({ voiRange: newRange }, volumeId);
+      let newRange = requestedRange;
+
+      if (
+        viewport?.type === Enums.ViewportType.VOLUME_3D ||
+        viewport?.type === Enums.ViewportType.PERSPECTIVE
+      ) {
+        if (typeof window !== 'undefined') {
+          (window as any).__OHIF_WL_PANEL_INPUT_CALLS__ =
+            ((window as any).__OHIF_WL_PANEL_INPUT_CALLS__ || 0) + 1;
+          if ((window as any).__OHIF_WL_PANEL_INPUT_CALLS__ <= 20) {
+            console.log('[WL-TRACE][Panel.handleVOIChange]', {
+              call: (window as any).__OHIF_WL_PANEL_INPUT_CALLS__,
+              viewportId,
+              viewportType: viewport?.type,
+              volumeId,
+              requestedRange,
+            });
+          }
+        }
+
+        const currentVoiRange =
+          viewport instanceof BaseVolumeViewport
+            ? viewport.getProperties(volumeId)?.voiRange
+            : viewport.getProperties()?.voiRange;
+
+        if (currentVoiRange) {
+          const currentWindowWidth = currentVoiRange.upper - currentVoiRange.lower;
+          const currentWindowCenter = currentVoiRange.lower + currentWindowWidth / 2;
+          const requestedWindowWidth = requestedRange.upper - requestedRange.lower;
+          const requestedWindowCenter = requestedRange.lower + requestedWindowWidth / 2;
+
+          const isLikelyStaleEventFromOtherViewport =
+            Math.abs(requestedWindowWidth - currentWindowWidth) > 1200 ||
+            Math.abs(requestedWindowCenter - currentWindowCenter) > 600;
+
+          if (isLikelyStaleEventFromOtherViewport) {
+            // Ignore first stale WL drag after switching from 2D -> 3D and resync UI with current 3D VOI.
+            setWindowLevels(prev =>
+              prev.map(windowLevel =>
+                windowLevel.volumeId === volumeId
+                  ? {
+                      ...windowLevel,
+                      voi: {
+                        windowWidth: currentWindowWidth,
+                        windowCenter: currentWindowCenter,
+                      },
+                    }
+                  : windowLevel
+              )
+            );
+            return;
+          }
+
+          // Guard against occasional first-drag spikes coming from slider range re-sync.
+          const MAX_WIDTH_DELTA_PER_EVENT = 300;
+          const MAX_CENTER_DELTA_PER_EVENT = 150;
+
+          const clampedWindowWidth = Math.max(
+            1,
+            currentWindowWidth +
+              Math.max(
+                -MAX_WIDTH_DELTA_PER_EVENT,
+                Math.min(MAX_WIDTH_DELTA_PER_EVENT, requestedWindowWidth - currentWindowWidth)
+              )
+          );
+
+          const clampedWindowCenter =
+            currentWindowCenter +
+            Math.max(
+              -MAX_CENTER_DELTA_PER_EVENT,
+              Math.min(MAX_CENTER_DELTA_PER_EVENT, requestedWindowCenter - currentWindowCenter)
+            );
+
+          const clampedRequestedRange = {
+            lower: clampedWindowCenter - clampedWindowWidth / 2,
+            upper: clampedWindowCenter + clampedWindowWidth / 2,
+          };
+
+          // 3D WL slider updates are very sensitive; blend with current VOI to reduce speed by 50%.
+          newRange = {
+            lower: currentVoiRange.lower + (clampedRequestedRange.lower - currentVoiRange.lower) * 0.5,
+            upper: currentVoiRange.upper + (clampedRequestedRange.upper - currentVoiRange.upper) * 0.5,
+          };
+        }
+      }
+
+      (viewport as any).setProperties({ voiRange: newRange }, volumeId);
       viewport.render();
     },
     [cornerstoneViewportService, viewportId]
   );
+
+  useEffect(() => {
+    if (recentViewportIdRef.current !== viewportId) {
+      recentViewportIdRef.current = viewportId;
+      setWindowLevels([]);
+      setIsLoading(true);
+    }
+  }, [viewportId]);
 
   const handleOpacityChange = useCallback(
     (viewportId, _volumeIndex, volumeId, opacity) => {
@@ -211,7 +392,7 @@ const ViewportWindowLevel = ({
 
           return (
             <WindowLevel
-              key={windowLevel.volumeId}
+              key={`${windowLevel.viewportId}-${windowLevel.volumeId}`}
               histogram={windowLevel.histogram}
               voi={windowLevel.voi}
               step={windowLevel.step}
