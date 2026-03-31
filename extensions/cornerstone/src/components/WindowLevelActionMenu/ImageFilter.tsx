@@ -1,6 +1,6 @@
 import React, { ReactElement, useCallback, useEffect, useState } from 'react';
 import { Icons } from '@ohif/ui-next';
-import { FilterType } from '../../services/ImageFilterService';
+import { FilterType } from '../../services/ImageFilterService/ImageFilterService';
 import { useSystem } from '@ohif/core';
 
 export type ImageFilterProps = {
