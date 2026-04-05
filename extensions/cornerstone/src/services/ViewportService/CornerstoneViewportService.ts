@@ -449,16 +449,12 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
     const isPTorNMViewport = viewportData.data.some(data => {
       const displaySet = displaySetService.getDisplaySetByUID(data.displaySetInstanceUID);
       const modality = displaySet?.Modality;
-      console.log('[CornerstoneViewportService] Checking modality:', modality);
       return modality === 'PT' || modality === 'NM';
     });
-
-    console.log('[CornerstoneViewportService] isPTorNMViewport:', isPTorNMViewport);
 
     let background = viewportInfo.getBackground();
     if (isPTorNMViewport) {
       background = [1, 1, 1]; // White background for PT/NM
-      console.log('[CornerstoneViewportService] Setting white background for PT/NM');
       const currentOptions = viewportInfo.getViewportOptions();
       viewportInfo.setViewportOptions({
         ...currentOptions,
@@ -1024,7 +1020,6 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
       displaySetInstanceUIDs.push(displaySetInstanceUID);
 
       if (!volume) {
-        console.log('Volume display set not found');
         continue;
       }
 
@@ -1109,6 +1104,12 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
           voi.windowCenter
         );
         properties.voiRange = { lower, upper };
+      } else {
+        const fallbackVoiRange = this._getFallbackVoiRangeFromDisplaySet(displaySet);
+
+        if (fallbackVoiRange) {
+          properties.voiRange = fallbackVoiRange;
+        }
       }
 
       // For PT/NM modality, use inverted VOI by default if not explicitly set
@@ -1174,6 +1175,26 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
     volumesProperties.forEach(({ properties, volumeId }) => {
       timeoutViewportCallback(() => {
         viewport.setProperties(properties, volumeId);
+
+        if (
+          (viewport.type === csEnums.ViewportType.VOLUME_3D ||
+            viewport.type === csEnums.ViewportType.PERSPECTIVE) &&
+          properties?.voiRange
+        ) {
+          const vp = viewport as any;
+          vp.__ohifWL3DBaselineByVolumeId = vp.__ohifWL3DBaselineByVolumeId || {};
+          vp.__ohifWL3DBaselineByVolumeId[volumeId] = {
+            lower: properties.voiRange.lower,
+            upper: properties.voiRange.upper,
+          };
+
+          // Keep a convenient default baseline for whichever volume is currently active.
+          vp.__ohifWL3DFallbackVoiRange = {
+            lower: properties.voiRange.lower,
+            upper: properties.voiRange.upper,
+          };
+        }
+
         viewport.render();
       });
     });
@@ -1385,6 +1406,108 @@ class CornerstoneViewportService extends PubSubService implements IViewportServi
     if (images && images.length) {
       return images[0].FrameOfReferenceUID;
     }
+  }
+
+  private _coerceNumericValue(value: unknown): number | undefined {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    if (typeof value === 'string') {
+      const firstToken = value.split('\\')[0]?.trim();
+      const parsed = Number(firstToken);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const parsedEntry = this._coerceNumericValue(entry);
+        if (typeof parsedEntry === 'number') {
+          return parsedEntry;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private _extractWindowLevelFromObject(
+    candidate: Record<string, unknown> | undefined
+  ): { windowWidth: number; windowCenter: number } | null {
+    if (!candidate) {
+      return null;
+    }
+
+    const nestedVoi = candidate.voi as Record<string, unknown> | undefined;
+    const nestedWindowLevel = candidate.windowLevel as Record<string, unknown> | undefined;
+
+    const windowWidth =
+      this._coerceNumericValue(candidate.windowWidth) ??
+      this._coerceNumericValue(candidate.WindowWidth) ??
+      this._coerceNumericValue((candidate as Record<string, unknown>).window) ??
+      this._coerceNumericValue(nestedWindowLevel?.windowWidth) ??
+      this._coerceNumericValue(nestedWindowLevel?.WindowWidth) ??
+      this._coerceNumericValue(nestedWindowLevel?.window) ??
+      this._coerceNumericValue(nestedVoi?.windowWidth) ??
+      this._coerceNumericValue(nestedVoi?.WindowWidth) ??
+      this._coerceNumericValue(nestedVoi?.window);
+
+    const windowCenter =
+      this._coerceNumericValue(candidate.windowCenter) ??
+      this._coerceNumericValue(candidate.WindowCenter) ??
+      this._coerceNumericValue((candidate as Record<string, unknown>).level) ??
+      this._coerceNumericValue(nestedWindowLevel?.windowCenter) ??
+      this._coerceNumericValue(nestedWindowLevel?.WindowCenter) ??
+      this._coerceNumericValue(nestedWindowLevel?.level) ??
+      this._coerceNumericValue(nestedVoi?.windowCenter) ??
+      this._coerceNumericValue(nestedVoi?.WindowCenter) ??
+      this._coerceNumericValue(nestedVoi?.level);
+
+    if (
+      typeof windowWidth === 'number' &&
+      Number.isFinite(windowWidth) &&
+      windowWidth > 0 &&
+      typeof windowCenter === 'number' &&
+      Number.isFinite(windowCenter)
+    ) {
+      return { windowWidth, windowCenter };
+    }
+
+    return null;
+  }
+
+  private _getFallbackVoiRangeFromDisplaySet(
+    displaySet: Record<string, unknown> | undefined
+  ): { lower: number; upper: number } | null {
+    if (!displaySet) {
+      return null;
+    }
+
+    const candidates = [
+      displaySet,
+      displaySet.instance,
+      displaySet.firstInstance,
+      Array.isArray(displaySet.instances) ? displaySet.instances[0] : undefined,
+      Array.isArray(displaySet.images) ? displaySet.images[0] : undefined,
+    ] as Array<Record<string, unknown> | undefined>;
+
+    for (const candidate of candidates) {
+      const windowLevel = this._extractWindowLevelFromObject(candidate);
+      if (!windowLevel) {
+        continue;
+      }
+
+      const { lower, upper } = csUtils.windowLevel.toLowHighRange(
+        windowLevel.windowWidth,
+        windowLevel.windowCenter
+      );
+
+      if (Number.isFinite(lower) && Number.isFinite(upper) && upper > lower) {
+        return { lower, upper };
+      }
+    }
+
+    return null;
   }
 
   private enqueueViewportResizeRequest() {

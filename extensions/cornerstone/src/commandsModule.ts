@@ -879,11 +879,13 @@ function commandsModule({
       windowWidth,
       windowCenter,
       displaySetInstanceUID,
+      isPreset = false,
     }: {
       viewportId: string;
       windowWidth: number;
       windowCenter: number;
       displaySetInstanceUID?: string;
+      isPreset?: boolean;
     }) {
       // convert to numbers
       let windowWidthNum = Number(windowWidth);
@@ -898,20 +900,19 @@ function commandsModule({
         viewport?.type === CoreEnums.ViewportType.PERSPECTIVE;
 
       if (isVolume3DViewport) {
-        if (typeof window !== 'undefined') {
-          (window as any).__OHIF_WL_COMMAND_CALLS__ = ((window as any).__OHIF_WL_COMMAND_CALLS__ || 0) + 1;
-          if ((window as any).__OHIF_WL_COMMAND_CALLS__ <= 20) {
-            console.log('[WL-TRACE][Command.setViewportWindowLevel]', {
-              call: (window as any).__OHIF_WL_COMMAND_CALLS__,
-              viewportId,
-              viewportType: viewport?.type,
-              inputWindowWidth: windowWidthNum,
-              inputWindowCenter: windowCenterNum,
-            });
-          }
-        }
+        const volumeIdForCurrentDisplaySet =
+          viewport instanceof BaseVolumeViewport
+            ? actions.getVolumeIdForDisplaySet({
+                viewportId,
+                displaySetInstanceUID,
+              })
+            : undefined;
 
-        const currentVoiRange = viewport.getProperties()?.voiRange;
+        const currentVoiRange =
+          viewport instanceof BaseVolumeViewport
+            ? viewport.getProperties(volumeIdForCurrentDisplaySet)?.voiRange ||
+              viewport.getProperties()?.voiRange
+            : viewport.getProperties()?.voiRange;
 
         if (currentVoiRange) {
           const currentWindowLevel = csUtils.windowLevel.toWindowLevel(
@@ -922,12 +923,23 @@ function commandsModule({
           const deltaWindowWidth = windowWidthNum - currentWindowLevel.windowWidth;
           const deltaWindowCenter = windowCenterNum - currentWindowLevel.windowCenter;
           const isLargePresetJump =
-            Math.abs(deltaWindowWidth) > 800 || Math.abs(deltaWindowCenter) > 400;
+            isPreset || Math.abs(deltaWindowWidth) > 800 || Math.abs(deltaWindowCenter) > 400;
 
-          // Slow down drag-like VOI updates for 3D by 50%, but keep large preset jumps snappy.
+          // Slow down drag-like VOI updates for 3D and cap per-call delta to avoid first-drag spikes.
           if (!isLargePresetJump) {
-            windowWidthNum = currentWindowLevel.windowWidth + deltaWindowWidth * 0.5;
-            windowCenterNum = currentWindowLevel.windowCenter + deltaWindowCenter * 0.5;
+            const MAX_WIDTH_DELTA = 120;
+            const MAX_CENTER_DELTA = 80;
+            const boundedWidthDelta = Math.max(
+              -MAX_WIDTH_DELTA,
+              Math.min(MAX_WIDTH_DELTA, deltaWindowWidth)
+            );
+            const boundedCenterDelta = Math.max(
+              -MAX_CENTER_DELTA,
+              Math.min(MAX_CENTER_DELTA, deltaWindowCenter)
+            );
+
+            windowWidthNum = Math.max(1, currentWindowLevel.windowWidth + boundedWidthDelta * 0.5);
+            windowCenterNum = currentWindowLevel.windowCenter + boundedCenterDelta * 0.5;
           }
         }
       }
@@ -948,6 +960,13 @@ function commandsModule({
           },
           volumeId
         );
+
+        if (isVolume3DViewport && volumeId) {
+          const vp = viewport as any;
+          vp.__ohifWL3DBaselineByVolumeId = vp.__ohifWL3DBaselineByVolumeId || {};
+          vp.__ohifWL3DBaselineByVolumeId[volumeId] = { lower, upper };
+          vp.__ohifWL3DFallbackVoiRange = { lower, upper };
+        }
       } else {
         viewport.setProperties({
           voiRange: {
@@ -1006,6 +1025,7 @@ function commandsModule({
         viewportId: activeViewport,
         windowWidth: windowLevelPreset.window,
         windowCenter: windowLevelPreset.level,
+        isPreset: true,
       });
     },
     getVolumeIdForDisplaySet: ({ viewportId, displaySetInstanceUID }) => {

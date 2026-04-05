@@ -65,7 +65,13 @@ const ViewportWindowLevel = ({
   const handleCornerstoneVOIModified = useCallback(
     e => {
       const { detail } = e;
-      const { volumeId, range } = detail;
+      const { volumeId, range, viewportId: eventViewportId } = detail || {};
+
+      // Only react to VOI updates from this viewport instance.
+      if (!volumeId || !range || eventViewportId !== viewportId) {
+        return;
+      }
+
       const oldWindowLevel = windowLevels.find(wl => wl.volumeId === volumeId);
 
       if (!oldWindowLevel) {
@@ -75,88 +81,6 @@ const ViewportWindowLevel = ({
       const oldVOI = oldWindowLevel.voi;
       const windowWidth = range.upper - range.lower;
       const windowCenter = range.lower + windowWidth / 2;
-
-      const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
-      const isVolume3D =
-        viewport?.type === Enums.ViewportType.VOLUME_3D ||
-        viewport?.type === Enums.ViewportType.PERSPECTIVE;
-
-      if (isVolume3D) {
-        if (typeof window !== 'undefined') {
-          (window as any).__OHIF_WL_PANEL_EVENT_CALLS__ =
-            ((window as any).__OHIF_WL_PANEL_EVENT_CALLS__ || 0) + 1;
-          if ((window as any).__OHIF_WL_PANEL_EVENT_CALLS__ <= 20) {
-            console.log('[WL-TRACE][Panel.VOI_MODIFIED]', {
-              call: (window as any).__OHIF_WL_PANEL_EVENT_CALLS__,
-              viewportId,
-              viewportType: viewport?.type,
-              volumeId,
-              windowWidth,
-              windowCenter,
-            });
-          }
-        }
-
-        const widthDelta = windowWidth - oldVOI.windowWidth;
-        const centerDelta = windowCenter - oldVOI.windowCenter;
-        const MAX_WIDTH_DELTA_PER_EVENT = 250;
-        const MAX_CENTER_DELTA_PER_EVENT = 120;
-
-        const isSpike =
-          Math.abs(widthDelta) > MAX_WIDTH_DELTA_PER_EVENT ||
-          Math.abs(centerDelta) > MAX_CENTER_DELTA_PER_EVENT;
-
-        if (isSpike) {
-          const clampedWindowWidth = Math.max(
-            1,
-            oldVOI.windowWidth +
-              Math.max(
-                -MAX_WIDTH_DELTA_PER_EVENT,
-                Math.min(MAX_WIDTH_DELTA_PER_EVENT, widthDelta)
-              )
-          );
-          const clampedWindowCenter =
-            oldVOI.windowCenter +
-            Math.max(
-              -MAX_CENTER_DELTA_PER_EVENT,
-              Math.min(MAX_CENTER_DELTA_PER_EVENT, centerDelta)
-            );
-
-          const clampedRange = {
-            lower: clampedWindowCenter - clampedWindowWidth / 2,
-            upper: clampedWindowCenter + clampedWindowWidth / 2,
-          };
-
-          if (viewport) {
-            (viewport as any).setProperties({ voiRange: clampedRange }, volumeId);
-            viewport.render();
-          }
-
-          console.log('[WL-3D-SOFT-GUARD][Panel]', {
-            volumeId,
-            oldVOI,
-            requested: { windowWidth, windowCenter },
-            clamped: { windowWidth: clampedWindowWidth, windowCenter: clampedWindowCenter },
-            viewportType: viewport?.type,
-          });
-
-          setWindowLevels(
-            windowLevels.map(windowLevel =>
-              windowLevel === oldWindowLevel
-                ? {
-                    ...oldWindowLevel,
-                    voi: {
-                      windowWidth: clampedWindowWidth,
-                      windowCenter: clampedWindowCenter,
-                    },
-                  }
-                : windowLevel
-            )
-          );
-
-          return;
-        }
-      }
 
       if (windowWidth === oldVOI.windowWidth && windowCenter === oldVOI.windowCenter) {
         return;
@@ -176,7 +100,7 @@ const ViewportWindowLevel = ({
         )
       );
     },
-    [windowLevels, cornerstoneViewportService, viewportId]
+    [windowLevels, viewportId]
   );
 
   const debouncedHandleCornerstoneVOIModified = useMemo(
@@ -203,84 +127,41 @@ const ViewportWindowLevel = ({
         viewport?.type === Enums.ViewportType.VOLUME_3D ||
         viewport?.type === Enums.ViewportType.PERSPECTIVE
       ) {
-        if (typeof window !== 'undefined') {
-          (window as any).__OHIF_WL_PANEL_INPUT_CALLS__ =
-            ((window as any).__OHIF_WL_PANEL_INPUT_CALLS__ || 0) + 1;
-          if ((window as any).__OHIF_WL_PANEL_INPUT_CALLS__ <= 20) {
-            console.log('[WL-TRACE][Panel.handleVOIChange]', {
-              call: (window as any).__OHIF_WL_PANEL_INPUT_CALLS__,
-              viewportId,
-              viewportType: viewport?.type,
-              volumeId,
-              requestedRange,
-            });
-          }
-        }
-
         const currentVoiRange =
           viewport instanceof BaseVolumeViewport
-            ? viewport.getProperties(volumeId)?.voiRange
+            ? viewport.getProperties(volumeId)?.voiRange || viewport.getProperties()?.voiRange
             : viewport.getProperties()?.voiRange;
 
-        if (currentVoiRange) {
-          const currentWindowWidth = currentVoiRange.upper - currentVoiRange.lower;
-          const currentWindowCenter = currentVoiRange.lower + currentWindowWidth / 2;
-          const requestedWindowWidth = requestedRange.upper - requestedRange.lower;
-          const requestedWindowCenter = requestedRange.lower + requestedWindowWidth / 2;
-
-          const isLikelyStaleEventFromOtherViewport =
-            Math.abs(requestedWindowWidth - currentWindowWidth) > 1200 ||
-            Math.abs(requestedWindowCenter - currentWindowCenter) > 600;
-
-          if (isLikelyStaleEventFromOtherViewport) {
-            // Ignore first stale WL drag after switching from 2D -> 3D and resync UI with current 3D VOI.
-            setWindowLevels(prev =>
-              prev.map(windowLevel =>
-                windowLevel.volumeId === volumeId
-                  ? {
-                      ...windowLevel,
-                      voi: {
-                        windowWidth: currentWindowWidth,
-                        windowCenter: currentWindowCenter,
-                      },
-                    }
-                  : windowLevel
-              )
-            );
-            return;
-          }
-
-          // Guard against occasional first-drag spikes coming from slider range re-sync.
-          const MAX_WIDTH_DELTA_PER_EVENT = 300;
-          const MAX_CENTER_DELTA_PER_EVENT = 150;
-
-          const clampedWindowWidth = Math.max(
-            1,
-            currentWindowWidth +
-              Math.max(
-                -MAX_WIDTH_DELTA_PER_EVENT,
-                Math.min(MAX_WIDTH_DELTA_PER_EVENT, requestedWindowWidth - currentWindowWidth)
-              )
-          );
-
-          const clampedWindowCenter =
-            currentWindowCenter +
-            Math.max(
-              -MAX_CENTER_DELTA_PER_EVENT,
-              Math.min(MAX_CENTER_DELTA_PER_EVENT, requestedWindowCenter - currentWindowCenter)
-            );
-
-          const clampedRequestedRange = {
-            lower: clampedWindowCenter - clampedWindowWidth / 2,
-            upper: clampedWindowCenter + clampedWindowWidth / 2,
-          };
-
-          // 3D WL slider updates are very sensitive; blend with current VOI to reduce speed by 50%.
-          newRange = {
-            lower: currentVoiRange.lower + (clampedRequestedRange.lower - currentVoiRange.lower) * 0.5,
-            upper: currentVoiRange.upper + (clampedRequestedRange.upper - currentVoiRange.upper) * 0.5,
-          };
+        if (!currentVoiRange) {
+          return;
         }
+
+        // Always start from the current 3D VOI at drag time, then apply a bounded delta.
+        const currentWindowWidth = currentVoiRange.upper - currentVoiRange.lower;
+        const currentWindowCenter = currentVoiRange.lower + currentWindowWidth / 2;
+        const requestedWindowWidth = requestedRange.upper - requestedRange.lower;
+        const requestedWindowCenter = requestedRange.lower + requestedWindowWidth / 2;
+        const DRAG_SCALE_3D = 0.5;
+
+        const MAX_WIDTH_DELTA_PER_EVENT = 120;
+        const MAX_CENTER_DELTA_PER_EVENT = 80;
+
+        const boundedWidthDelta = Math.max(
+          -MAX_WIDTH_DELTA_PER_EVENT,
+          Math.min(MAX_WIDTH_DELTA_PER_EVENT, requestedWindowWidth - currentWindowWidth)
+        );
+        const boundedCenterDelta = Math.max(
+          -MAX_CENTER_DELTA_PER_EVENT,
+          Math.min(MAX_CENTER_DELTA_PER_EVENT, requestedWindowCenter - currentWindowCenter)
+        );
+
+        const nextWindowWidth = Math.max(1, currentWindowWidth + boundedWidthDelta * DRAG_SCALE_3D);
+        const nextWindowCenter = currentWindowCenter + boundedCenterDelta * DRAG_SCALE_3D;
+
+        newRange = {
+          lower: nextWindowCenter - nextWindowWidth / 2,
+          upper: nextWindowCenter + nextWindowWidth / 2,
+        };
       }
 
       (viewport as any).setProperties({ voiRange: newRange }, volumeId);
