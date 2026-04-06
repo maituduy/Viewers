@@ -898,6 +898,9 @@ function commandsModule({
       const isVolume3DViewport =
         viewport?.type === CoreEnums.ViewportType.VOLUME_3D ||
         viewport?.type === CoreEnums.ViewportType.PERSPECTIVE;
+      const AUTO_SHIFT_FACTOR_3D = 1.0;
+      const AUTO_SHIFT_MAX_DELTA_3D = 30;
+      let currentVoiRangeFor3D: { lower: number; upper: number } | undefined;
 
       if (isVolume3DViewport) {
         const volumeIdForCurrentDisplaySet =
@@ -913,6 +916,8 @@ function commandsModule({
             ? viewport.getProperties(volumeIdForCurrentDisplaySet)?.voiRange ||
               viewport.getProperties()?.voiRange
             : viewport.getProperties()?.voiRange;
+
+        currentVoiRangeFor3D = currentVoiRange;
 
         if (currentVoiRange) {
           const currentWindowLevel = csUtils.windowLevel.toWindowLevel(
@@ -945,6 +950,23 @@ function commandsModule({
       }
 
       const { lower, upper } = csUtils.windowLevel.toLowHighRange(windowWidthNum, windowCenterNum);
+
+      if (isVolume3DViewport && currentVoiRangeFor3D) {
+        const currentWindowCenter =
+          currentVoiRangeFor3D.lower +
+          (currentVoiRangeFor3D.upper - currentVoiRangeFor3D.lower) / 2;
+        const nextWindowCenter = lower + (upper - lower) / 2;
+        const rawShiftDelta = (nextWindowCenter - currentWindowCenter) * AUTO_SHIFT_FACTOR_3D;
+        const boundedShiftDelta = Math.max(
+          -AUTO_SHIFT_MAX_DELTA_3D,
+          Math.min(AUTO_SHIFT_MAX_DELTA_3D, rawShiftDelta)
+        );
+
+        if (Math.abs(boundedShiftDelta) > 0.001) {
+          actions.shiftVolumeOpacityPoints({ viewportId, shift: boundedShiftDelta });
+          (viewport as any).shiftedBy = ((viewport as any).shiftedBy || 0) + boundedShiftDelta;
+        }
+      }
 
       if (viewport instanceof BaseVolumeViewport) {
         const volumeId = actions.getVolumeIdForDisplaySet({

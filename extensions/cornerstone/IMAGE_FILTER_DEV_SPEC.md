@@ -160,5 +160,93 @@ File: `extensions/cornerstone/src/components/WindowLevelActionMenu/ImageFilter.t
 - [ ] Kiểm tra `Clear All` có reset toàn bộ stack không.
 - [ ] Kiểm tra ngưỡng mặc định có đủ nhìn thấy nhưng không quá gắt.
 
-## 11. Kết luận
+## 11. Sơ đồ pipeline xử lý
+### 11.1 Sơ đồ text (ASCII)
+```text
+[User click filter in UI]
+          |
+          v
+[ImageFilter.tsx]
+  - chọn filter / remove / clear
+          |
+          v
+[ImageFilterService]
+  - cập nhật state theo viewportId
+  - activeFilters = queue theo thứ tự click
+          |
+          v
+[applyNativeViewportFilters]
+  - patch viewport instance (nếu cần)
+  - set custom properties
+          |
+          v
+[viewport.render()]
+          |
+          v
+[getRenderPasses()]
+  start: ForwardPass
+  for each filter in activeFilters:
+    passChain = Convolution2DPass(delegate = passChain, kernel = filterKernel)
+          |
+          v
+[Kết quả render cuối]
+```
+
+Ví dụ stack:
+```text
+emboss -> blur -> blur -> edges
+
+Head pass:
+[edges] -> [blur#2] -> [blur#1] -> [emboss] -> [ForwardPass]
+```
+
+### 11.2 PlantUML
+```plantuml
+@startuml
+title Cornerstone Image Filter Pipeline (Stacked Render-Pass)
+
+actor User
+participant "Window/Level Menu\n(ImageFilter UI)" as UI
+participant "ImageFilterService" as SVC
+participant "Cornerstone Viewport" as VP
+participant "VTK Render Pipeline" as VTK
+
+== Apply Filter ==
+User -> UI: Click filter (sharpen/blur/emboss/edges)
+UI -> SVC: toggleFilter(viewportId, filterType)
+
+alt filterType == none
+  SVC -> SVC: activeFilters = []
+else append layer
+  SVC -> SVC: activeFilters.push(filterType)
+end
+
+SVC -> VP: applyNativeViewportFilters(viewportId, activeFilters)
+SVC -> VP: patch viewport (if needed)\nset custom properties
+VP -> VP: render()
+
+VP -> VTK: getRenderPasses()
+VTK -> VTK: base = ForwardPass
+loop for filter in activeFilters (click order)
+  VTK -> VTK: base = Convolution2DPass(delegate=base,\nkernel=filterKernel)
+end
+VTK --> VP: return stacked pass head
+VP --> User: Updated image
+
+== Remove One Layer ==
+User -> UI: Click "x" on applied filter[i]
+UI -> SVC: removeFilterAt(viewportId, index)
+SVC -> SVC: activeFilters.splice(index, 1)
+SVC -> VP: rebuild pass chain + render()
+
+== Clear All ==
+User -> UI: Click "Clear All" / "none"
+UI -> SVC: clearAllFilters(viewportId)
+SVC -> SVC: activeFilters = []
+SVC -> VP: render with base pipeline only
+
+@enduml
+```
+
+## 12. Kết luận
 Filter hiện tại đã chuyển sang mô hình native render-pass có stack theo queue. Đây là hướng đúng để dev tiếp tục mở rộng thêm filter mới, tune kernel, hoặc thêm preset mà không cần quay lại pipeline canvas/worker cũ.

@@ -1,5 +1,6 @@
 import { PubSubService } from '@ohif/core';
 import { Types as OhifTypes } from '@ohif/core';
+import { Enums as csEnums } from '@cornerstonejs/core';
 import vtkConvolution2DPass from '@kitware/vtk.js/Rendering/OpenGL/Convolution2DPass';
 import vtkForwardPass from '@kitware/vtk.js/Rendering/OpenGL/ForwardPass';
 
@@ -29,6 +30,13 @@ const OHIF_FILTER_STACK_KEY = '__ohifFilterStack';
 const OHIF_SHARPENING_KEY = '__ohifSharpening';
 const OHIF_SMOOTHING_KEY = '__ohifSmoothing';
 const OHIF_FILTER_PATCHED_KEY = '__ohifFilterPassPatched';
+
+function is3DViewport(viewport: any): boolean {
+  return (
+    viewport?.type === csEnums.ViewportType.VOLUME_3D ||
+    viewport?.type === csEnums.ViewportType.PERSPECTIVE
+  );
+}
 
 function clampIntensity(value: number): number {
   return Math.max(0, Math.min(3, value));
@@ -291,6 +299,11 @@ class ImageFilterService extends PubSubService {
       return;
     }
 
+    // 2D image filters rely on OpenGL convolution passes and are not stable on 3D viewports.
+    if (is3DViewport(viewport)) {
+      return;
+    }
+
     this.patchViewportForNativeFilters(viewport);
 
     const native = this.getNativeFilterSettings(viewportId);
@@ -380,6 +393,10 @@ class ImageFilterService extends PubSubService {
       const basePasses = originalGetRenderPasses.call(this, ...args);
       const renderPasses = Array.isArray(basePasses) ? [...basePasses] : [];
 
+      if (is3DViewport(this)) {
+        return renderPasses.length ? renderPasses : basePasses;
+      }
+
       try {
         const embossing = clampIntensity(this[OHIF_EMBOSSING_KEY] || 0);
         const edgeEnhancement = clampIntensity(this[OHIF_EDGE_KEY] || 0);
@@ -400,7 +417,7 @@ class ImageFilterService extends PubSubService {
         // Keep base passes if custom pass creation fails.
       }
 
-      return renderPasses.length ? renderPasses : null;
+      return renderPasses.length ? renderPasses : basePasses;
     };
 
     viewport[OHIF_FILTER_PATCHED_KEY] = true;

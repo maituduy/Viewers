@@ -3,6 +3,9 @@ import { VolumeShiftProps } from '../../types/ViewportPresets';
 import { Numeric } from '@ohif/ui-next';
 import { useSystem } from '@ohif/core';
 import { useTranslation } from 'react-i18next';
+import { Enums } from '@cornerstonejs/core';
+
+const { Events } = Enums;
 
 export function VolumeShift({ viewportId }: VolumeShiftProps): ReactElement {
   const { servicesManager, commandsManager } = useSystem();
@@ -37,6 +40,26 @@ export function VolumeShift({ viewportId }: VolumeShiftProps): ReactElement {
     setMaxShift(maxShift);
     setStep(Math.pow(10, Math.floor(Math.log10(transferFunctionWidth / 500))));
   }, [cornerstoneViewportService, viewportId, actor, ofun, isBlocking]);
+
+  useEffect(() => {
+    const syncShiftFromViewport = () => {
+      const nextShift = Number(viewport?.shiftedBy) || 0;
+      prevShiftRef.current = nextShift;
+      setShift(nextShift);
+    };
+
+    syncShiftFromViewport();
+
+    const element = viewport?.element;
+    if (!element) {
+      return;
+    }
+
+    element.addEventListener(Events.VOI_MODIFIED, syncShiftFromViewport);
+    return () => {
+      element.removeEventListener(Events.VOI_MODIFIED, syncShiftFromViewport);
+    };
+  }, [viewport, viewportId]);
 
   const onChangeRange = useCallback(
     newShift => {

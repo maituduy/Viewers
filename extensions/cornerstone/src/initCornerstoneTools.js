@@ -71,6 +71,8 @@ function patchWindowLevelToolFor3D(servicesManager = null) {
   const WL_3D_DRAG_SCALE = 0.5;
   const WL_3D_WIDE_BASELINE_THRESHOLD = 5000;
   const WL_3D_EMERGENCY_BASELINE_WW = 2000;
+  const WL_3D_AUTO_SHIFT_FACTOR = 1.0;
+  const WL_3D_AUTO_SHIFT_MAX_DELTA = 30;
 
   /** @type {(value: number) => number} */
   const clampDelta = value => {
@@ -250,6 +252,44 @@ function patchWindowLevelToolFor3D(servicesManager = null) {
     return { lower, upper };
   };
 
+  /** @type {(viewport: any, shiftDelta: number) => void} */
+  const applyAutoOpacityShift = (viewport, shiftDelta) => {
+    if (!viewport || !Number.isFinite(shiftDelta) || Math.abs(shiftDelta) < 0.001) {
+      return;
+    }
+
+    const boundedShift = Math.max(
+      -WL_3D_AUTO_SHIFT_MAX_DELTA,
+      Math.min(WL_3D_AUTO_SHIFT_MAX_DELTA, shiftDelta)
+    );
+
+    const actor = viewport?.getActors?.()?.[0]?.actor;
+    const ofun = actor?.getProperty?.()?.getScalarOpacity?.(0);
+    if (!ofun) {
+      return;
+    }
+
+    const size = ofun.getSize?.();
+    if (!Number.isFinite(size) || size <= 0) {
+      return;
+    }
+
+    const opacityPointValues = [];
+    for (let pointIdx = 0; pointIdx < size; pointIdx++) {
+      const opacityPointValue = [0, 0, 0, 0];
+      ofun.getNodeValue(pointIdx, opacityPointValue);
+      opacityPointValue[0] += boundedShift;
+      opacityPointValues.push(opacityPointValue);
+    }
+
+    ofun.removeAllPoints();
+    opacityPointValues.forEach(opacityPointValue => {
+      ofun.addPoint(...opacityPointValue);
+    });
+
+    viewport.shiftedBy = (Number(viewport.shiftedBy) || 0) + boundedShift;
+  };
+
   /** @type {typeof WindowLevelTool.prototype.getNewRange} */
   WindowLevelTool.prototype.getNewRange = function (args) {
     const { viewport, deltaPointsCanvas, volumeId } = args;
@@ -319,6 +359,10 @@ function patchWindowLevelToolFor3D(servicesManager = null) {
 
     const voiLutFunction = viewport?.getProperties?.()?.VOILUTFunction;
     const nextRange = csUtils.windowLevel.toLowHighRange(windowWidth, windowCenter, voiLutFunction);
+
+    const baseWindowCenter = baseLower + (baseUpper - baseLower) / 2;
+    const nextWindowCenter = nextRange.lower + (nextRange.upper - nextRange.lower) / 2;
+    applyAutoOpacityShift(viewport, (nextWindowCenter - baseWindowCenter) * WL_3D_AUTO_SHIFT_FACTOR);
 
     // Keep the runtime baseline in sync with the latest drag result to prevent stale fallback snap-back.
     if (nextRange?.lower !== undefined && nextRange?.upper !== undefined) {
