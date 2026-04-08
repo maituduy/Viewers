@@ -894,10 +894,14 @@ function commandsModule({
       // get actor from the viewport
       const renderingEngine = cornerstoneViewportService.getRenderingEngine();
       const viewport = renderingEngine.getViewport(viewportId);
+      const displaySet = displaySetInstanceUID
+        ? displaySetService.getDisplaySetByUID(displaySetInstanceUID)
+        : undefined;
 
       const isVolume3DViewport =
         viewport?.type === CoreEnums.ViewportType.VOLUME_3D ||
         viewport?.type === CoreEnums.ViewportType.PERSPECTIVE;
+      const isNMViewport = displaySet?.Modality === 'NM';
       const AUTO_SHIFT_FACTOR_3D = 1.0;
       const AUTO_SHIFT_MAX_DELTA_3D = 30;
       let currentVoiRangeFor3D: { lower: number; upper: number } | undefined;
@@ -946,6 +950,33 @@ function commandsModule({
             windowWidthNum = Math.max(1, currentWindowLevel.windowWidth + boundedWidthDelta * 0.5);
             windowCenterNum = currentWindowLevel.windowCenter + boundedCenterDelta * 0.5;
           }
+        }
+      }
+
+      if (isNMViewport && !isPreset) {
+        const currentVoiRange = viewport?.getProperties()?.voiRange;
+
+        if (currentVoiRange) {
+          const currentWindowLevel = csUtils.windowLevel.toWindowLevel(
+            currentVoiRange.lower,
+            currentVoiRange.upper
+          );
+
+          const deltaWindowWidth = windowWidthNum - currentWindowLevel.windowWidth;
+          const deltaWindowCenter = windowCenterNum - currentWindowLevel.windowCenter;
+          const MAX_WIDTH_DELTA = 120;
+          const MAX_CENTER_DELTA = 80;
+          const boundedWidthDelta = Math.max(
+            -MAX_WIDTH_DELTA,
+            Math.min(MAX_WIDTH_DELTA, deltaWindowWidth)
+          );
+          const boundedCenterDelta = Math.max(
+            -MAX_CENTER_DELTA,
+            Math.min(MAX_CENTER_DELTA, deltaWindowCenter)
+          );
+
+          windowWidthNum = Math.max(1, currentWindowLevel.windowWidth + boundedWidthDelta * 0.5);
+          windowCenterNum = currentWindowLevel.windowCenter + boundedCenterDelta * 0.5;
         }
       }
 
