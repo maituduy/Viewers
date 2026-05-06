@@ -7,6 +7,7 @@ import {
   Types as CoreTypes,
   BaseVolumeViewport,
   getRenderingEngines,
+  CONSTANTS,
 } from '@cornerstonejs/core';
 import {
   ToolGroupManager,
@@ -1554,6 +1555,110 @@ function commandsModule({
       viewport.render();
     },
 
+    setViewportBlendMode: ({ viewportId, blendMode = 'vr' }) => {
+      const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
+
+      if (!viewport || !(viewport instanceof BaseVolumeViewport)) {
+        return;
+      }
+
+      const normalizedBlendMode = `${blendMode}`.toLowerCase();
+      let cornerstoneBlendMode = CoreEnums.BlendModes.COMPOSITE;
+
+      if (normalizedBlendMode === 'mip') {
+        cornerstoneBlendMode = CoreEnums.BlendModes.MAXIMUM_INTENSITY_BLEND;
+      } else if (normalizedBlendMode === 'minip') {
+        cornerstoneBlendMode = CoreEnums.BlendModes.MINIMUM_INTENSITY_BLEND;
+      } else if (normalizedBlendMode === 'avg') {
+        cornerstoneBlendMode = CoreEnums.BlendModes.AVERAGE_INTENSITY_BLEND;
+      }
+
+      viewport.setBlendMode(cornerstoneBlendMode);
+
+      const actorEntries = viewport.getActors?.() || [];
+      actorEntries.forEach(entry => {
+        entry?.actor?.getMapper?.()?.setBlendMode?.(cornerstoneBlendMode);
+      });
+
+      if (normalizedBlendMode === 'vr') {
+        if (viewport.resetSlabThickness) {
+          viewport.resetSlabThickness();
+        } else if (viewport.setSlabThickness) {
+          viewport.setSlabThickness(CONSTANTS.RENDERING_DEFAULTS.MINIMUM_SLAB_THICKNESS);
+        }
+      } else {
+        const imageData = actorEntries?.[0]?.actor?.getMapper?.()?.getInputData?.();
+        const dimensions = imageData?.getDimensions?.();
+        const spacing = imageData?.getSpacing?.();
+        if (dimensions && spacing && dimensions.length >= 3 && spacing.length >= 3) {
+          const fullSlabThickness = Math.sqrt(
+            (dimensions[0] * spacing[0]) ** 2 +
+              (dimensions[1] * spacing[1]) ** 2 +
+              (dimensions[2] * spacing[2]) ** 2
+          );
+          if (fullSlabThickness && viewport.setSlabThickness) {
+            viewport.setSlabThickness(fullSlabThickness);
+          }
+        }
+      }
+
+      const vtkImageData = actorEntries?.[0]?.actor?.getMapper?.()?.getInputData?.();
+      let dataMin: number | undefined;
+      let dataMax: number | undefined;
+      try {
+        const voxelManagerContainer = (vtkImageData as any)?.get?.('voxelManager');
+        const range = voxelManagerContainer?.voxelManager?.getRange?.();
+        if (range && range.length >= 2) {
+          dataMin = range[0];
+          dataMax = range[1];
+        }
+      } catch {
+        // voxelManager not available
+      }
+
+      let autoVoiRange: { lower: number; upper: number } | undefined;
+      if (dataMin !== undefined && dataMax !== undefined) {
+        const span = dataMax - dataMin;
+        if (normalizedBlendMode === 'mip') {
+          autoVoiRange = { lower: dataMin, upper: dataMin + span * 0.3 };
+        } else if (normalizedBlendMode === 'minip') {
+          autoVoiRange = { lower: dataMin, upper: dataMin + span * 0.15 };
+        }
+      }
+
+      let voiApplied = false;
+      actorEntries.forEach(entry => {
+        const referencedId = entry?.referencedId;
+        if (!referencedId) {
+          return;
+        }
+        try {
+          if (autoVoiRange) {
+            (viewport as any).setProperties({ voiRange: autoVoiRange }, referencedId);
+            voiApplied = true;
+          } else {
+            const props = (viewport as any).getProperties(referencedId);
+            if (props?.voiRange) {
+              (viewport as any).setProperties({ voiRange: props.voiRange }, referencedId);
+              voiApplied = true;
+            }
+          }
+        } catch {
+          // skip non-volume actors
+        }
+      });
+
+      if (!voiApplied && autoVoiRange) {
+        try {
+          (viewport as any).setProperties({ voiRange: autoVoiRange });
+        } catch {
+          // ignore
+        }
+      }
+
+      viewport.render();
+    },
+
     /**
      * Sets the volume quality for a given viewport.
      * @param {string} viewportId - The ID of the viewport to set the volume quality.
@@ -2808,6 +2913,9 @@ function commandsModule({
     },
     setViewportPreset: {
       commandFn: actions.setViewportPreset,
+    },
+    setViewportBlendMode: {
+      commandFn: actions.setViewportBlendMode,
     },
     setVolumeRenderingQulaity: {
       commandFn: actions.setVolumeRenderingQulaity,

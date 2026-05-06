@@ -5,6 +5,7 @@ export * from './WindowLevelActionMenu';
 export * from './WindowLevelActionMenuWrapper';
 export * from './VolumeRenderingOptions';
 export * from './VolumeRenderingPresets';
+export * from './VolumeRenderingMethods';
 export * from './VolumeRenderingQuality';
 export * from './VolumeLighting';
 export * from './VolumeShade';

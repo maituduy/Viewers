@@ -5,6 +5,7 @@ import { Colormap } from './Colormap';
 import { Colorbar } from './Colorbar';
 import { WindowLevel } from './WindowLevel';
 import { VolumeRenderingPresets } from './VolumeRenderingPresets';
+import { VolumeRenderingMethods } from './VolumeRenderingMethods';
 import { VolumeRenderingOptions } from './VolumeRenderingOptions';
 import { ImageFilter } from './ImageFilter';
 import { useViewportRendering } from '../../hooks/useViewportRendering';
@@ -96,6 +97,16 @@ export function WindowLevelActionMenuContent({
             itemIcon="viewport-window-level"
           >
             <WindowLevel viewportId={viewportId} />
+          </AllInOneMenu.SubMenu>
+        )}
+
+        {is3DVolume && (
+          <AllInOneMenu.SubMenu
+            key="volumeRenderingMethods"
+            itemLabel={t('Rendering Method', 'Rendering Method')}
+            itemIcon="icon-settings"
+          >
+            <VolumeRenderingMethods viewportId={viewportId} />
           </AllInOneMenu.SubMenu>
         )}
 
